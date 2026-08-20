@@ -104,7 +104,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시보드")
-st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/환노위 발의 법안 실시간 모니터링")
+st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/기후에너지환경노동위 발의 법안 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
@@ -125,7 +125,6 @@ def fetch_molit_dept_parallel(item):
 def fetch_assembly_bills():
     bills_dict = {}
     
-    # 국민참여입법센터 (국회 의안정보 시스템 데이터 실시간 라이브 연동)
     try:
         for page in range(1, 4):
             url = f"https://opinion.lawmaking.go.kr/gcom/nsmLmSts/out?pageIndex={page}"
@@ -150,15 +149,21 @@ def fetch_assembly_bills():
                     proposer_raw = tds[1].text.strip() if len(tds) > 1 else "국회의원"
                     comm_raw = tds[2].text.strip() if len(tds) > 2 else ""
                     
-                    # 날짜 및 발의자 정리
-                    dm = re.search(r'\((20\d{2}[-.\s]\d{1,2}[-.\s]\d{1,2})\)', proposer_raw)
-                    date = dm.group(1).replace(' ', '').replace('.', '-') if dm else "최근접수"
+                    # 날짜 추출 정밀화 (YYYY-MM-DD 규격화)
+                    dm = re.search(r'(20\d{2}[-.\s\/]\d{1,2}[-.\s\/]\d{1,2})', row_text)
+                    if dm:
+                        raw_d = dm.group(1).strip().replace('.', '-').replace('/', '-').replace(' ', '')
+                        parts = raw_d.split('-')
+                        date = f"{parts[0]}-{int(parts[1]):02d}-{int(parts[2]):02d}" if len(parts) == 3 else raw_d
+                    else:
+                        date = "날짜 미표기"
+                        
                     proposer = re.sub(r'\(20\d{2}.*?\)', '', proposer_raw).strip()
                     if not proposer: proposer = "국회의원"
                     
-                    # 소관위 분류 (국토교통위 vs 환경노동위)
-                    is_kokto = "국토" in comm_raw or any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통"])
-                    is_hwan = any(kw in comm_raw for kw in ["환경", "노동", "기후"]) or any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지"])
+                    # 소관위 및 키워드 분류 (국토교통위 vs 기후에너지환경노동위)
+                    is_kokto = "국토" in comm_raw or any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통", "물류"])
+                    is_hwan = any(kw in comm_raw for kw in ["환경", "노동", "기후", "에너지"]) or any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질", "자원순환"])
                     
                     if is_kokto:
                         bills_dict[bill_id] = {
@@ -170,7 +175,7 @@ def fetch_assembly_bills():
                         }
                     elif is_hwan:
                         bills_dict[bill_id] = {
-                            "기관": "📜 환경노동위원회",
+                            "기관": "📜 기후에너지환경노동위원회",
                             "담당부서": f"발의: {proposer}",
                             "날짜": date,
                             "제목": title,
@@ -183,7 +188,7 @@ def fetch_assembly_bills():
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부 (원본 동작 방식 100% 유지)
+    # 1. 국토교통부 (원본 유지)
     molit_items = []
     try:
         for page in range(1, 3):
@@ -298,7 +303,7 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시", "📜 국토위 법안", "📜 환노위 법안"])
+    tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시", "📜 국토교통위원회", "📜 기후에너지환경노동위원회"])
 
     def render_custom_table(filtered_df):
         if filtered_df.empty:
@@ -331,6 +336,6 @@ if not df_total.empty:
     with tabs[3]: render_custom_table(df_total[df_total['기관'] == '산림청'])
     with tabs[4]: render_custom_table(df_total[df_total['기관'] == '서울특별시'])
     with tabs[5]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'])
-    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '📜 환경노동위원회'])
+    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '📜 기후에너지환경노동위원회'])
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
