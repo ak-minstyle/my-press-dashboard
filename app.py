@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 import re
 from concurrent.futures import ThreadPoolExecutor
 import urllib3
+import time
 
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -13,9 +14,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 & 국회 법안 대시보드", page_icon="📰", layout="wide")
 
-# 다크모드 방어 및 표 스타일링
+# 다크모드 방어, 표 스타일링 및 우측 상단 'Running' 애니메이션 완전히 숨김
 st.markdown("""
     <style>
+        [data-testid="stStatusWidget"] {
+            visibility: hidden !important;
+            display: none !important;
+        }
+        
         html, body, [data-testid="stAppViewContainer"], .stApp, .main, .block-container {
             background-color: #ffffff !important;
             color: #0f172a !important;
@@ -111,7 +117,6 @@ st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/기후에너지환경노동위 발의 법안 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-# 🔥 인증키 고정 완료
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
 def fetch_molit_dept_parallel(item):
@@ -127,65 +132,10 @@ def fetch_molit_dept_parallel(item):
     except: pass
     return item
 
-@st.cache_data(ttl=1800)
-def fetch_assembly_bills():
-    bills = []
-    url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-    
-    params = {
-        "KEY": ASSEMBLY_API_KEY,
-        "Type": "json",
-        "pIndex": 1,
-        "pSize": 600,
-        "AGE": "22"
-    }
-    
-    try:
-        resp = requests.get(url, params=params, timeout=10, verify=False)
-        data = resp.json()
-        
-        if "nzmimeepazxkubdpn" in data:
-            rows = data["nzmimeepazxkubdpn"][1]["row"]
-            for r in rows:
-                comm = r.get("COMMITTEE", "") or ""
-                title = r.get("BILL_NAME", "")
-                bill_id = r.get("BILL_ID", "")
-                proposer = r.get("PROPOSER", "국회의원")
-                date = r.get("PROPOSE_DT", "")
-                
-                if not bill_id: continue
-                
-                link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
-                
-                is_kokto = False
-                is_hwan = False
-
-                if "국토" in comm:
-                    is_kokto = True
-                elif any(kw in comm for kw in ["환경", "노동", "기후"]):
-                    is_hwan = True
-                
-                if not comm:
-                    if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통", "물류"]):
-                        is_kokto = True
-                    elif any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]):
-                        is_hwan = True
-                
-                if is_kokto:
-                    bills.append({"기관": "📜 국토교통위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
-                elif is_hwan:
-                    bills.append({"기관": "📜 기후에너지환경노동위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
-    except Exception as e:
-        pass
-
-    return bills
-
-@st.cache_data(ttl=1800)
-def fetch_data():
-    all_data = []
-
-    # 1. 국토교통부 (1~3페이지 수집)
-    molit_items = []
+# 각 기관별 수집 함수를 분리하여 진행률 표시에 활용 (show_spinner=False 적용)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_molit():
+    items = []
     try:
         for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
@@ -199,14 +149,15 @@ def fetch_data():
                     title = a_tag.text.strip()
                     link = "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']
                     date = tds[3].text.strip()
-                    molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
-        
+                    items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         with ThreadPoolExecutor(max_workers=8) as executor:
-            molit_items = list(executor.map(fetch_molit_dept_parallel, molit_items))
-        all_data.extend(molit_items)
+            items = list(executor.map(fetch_molit_dept_parallel, items))
     except: pass
+    return items
 
-    # 2. 기후에너지환경부 (1~3페이지 수집)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_mcee():
+    items = []
     try:
         for page in range(1, 4):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
@@ -221,10 +172,13 @@ def fetch_data():
                     link = urljoin("https://www.mcee.go.kr/home/web/", a_tag.get('href', ''))
                     date = tds[-2].text.strip()
                     dept = tds[-4].get_text(separator=' ', strip=True)
-                    all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
+                    items.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
+    return items
 
-    # 3. 산림청 (1~3페이지 수집)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_forest():
+    items = []
     try:
         for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
@@ -236,27 +190,27 @@ def fetch_data():
                 raw_href = a.get('href', '')
                 ntt_m = re.search(r'nttId=(\d+)', raw_href)
                 if not ntt_m: continue
-                
                 ntt_id = ntt_m.group(1)
                 link = urljoin("https://www.forest.go.kr", raw_href)
                 parent_box = a.find_parent(['li', 'tr', 'td', 'div'])
                 box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else a.get_text()
-                
                 dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', box_text)
                 date = dm.group(1).replace('.', '-').replace('/', '-') if dm else "날짜 미표기"
-                
                 clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
                 clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
-                
                 if ntt_id not in posts or len(clean_title) > len(posts[ntt_id]['제목']):
                     posts[ntt_id] = {"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": link}
-            all_data.extend(posts.values())
+            items.extend(posts.values())
     except: pass
+    return items
 
-    # 4. 서울특별시 (🔥 데이터가 많은 서울시는 특별히 1~5페이지 집중 수집)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_seoul():
+    items = []
     try:
         for page in range(1, 6):
-            url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
+            # 🔥 서울시 게시판 고유 ID(bbsNo=158)를 URL에 명시하여 페이지 넘김 오류 완벽 해결
+            url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
@@ -267,14 +221,52 @@ def fetch_data():
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
                     ntt_m = re.search(r'nttNo=(\d+)|(\d{5,})', raw_href)
-                    link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.seoul.go.kr/news/", raw_href)
+                    if ntt_m:
+                        n_val = ntt_m.group(1) if ntt_m.group(1) else ntt_m.group(2)
+                        link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={n_val}"
+                    else:
+                        link = urljoin("https://www.seoul.go.kr/news/", raw_href)
+                        
                     date = tds[-1].text.strip()
                     dept = tds[-2].get_text(separator=' ', strip=True)
-                    all_data.append({"기관": "서울특별시", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
+                    items.append({"기관": "서울특별시", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
+    return items
 
-    return pd.DataFrame(all_data)
-
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_assembly_bills():
+    bills = []
+    url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
+    params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
+    try:
+        resp = requests.get(url, params=params, timeout=10, verify=False)
+        data = resp.json()
+        if "nzmimeepazxkubdpn" in data:
+            rows = data["nzmimeepazxkubdpn"][1]["row"]
+            for r in rows:
+                comm = r.get("COMMITTEE", "") or ""
+                title = r.get("BILL_NAME", "")
+                bill_id = r.get("BILL_ID", "")
+                proposer = r.get("PROPOSER", "국회의원")
+                date = r.get("PROPOSE_DT", "")
+                
+                if not bill_id: continue
+                link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
+                
+                is_kokto, is_hwan = False, False
+                if "국토" in comm: is_kokto = True
+                elif any(kw in comm for kw in ["환경", "노동", "기후"]): is_hwan = True
+                
+                if not comm:
+                    if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통", "물류"]):
+                        is_kokto = True
+                    elif any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]):
+                        is_hwan = True
+                
+                if is_kokto: bills.append({"기관": "📜 국토교통위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
+                elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
+    except: pass
+    return bills
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
@@ -282,11 +274,31 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("보도자료(3~5페이지) 및 국회 법안을 심층 수집 중입니다..."):
-    df_press = fetch_data()
-    df_bills = pd.DataFrame(fetch_assembly_bills())
+# 🔥 예쁜 0~100% 프로그레스 바 적용
+progress_bar = st.progress(0, text="데이터 수집 준비 중...")
 
-df_total = pd.concat([df_press, df_bills], ignore_index=True) if not df_bills.empty else df_press
+progress_bar.progress(10, text="🏢 국토교통부 보도자료 수집 중 (1/5)...")
+molit_data = fetch_molit()
+
+progress_bar.progress(30, text="🌿 기후에너지환경부 보도자료 수집 중 (2/5)...")
+mcee_data = fetch_mcee()
+
+progress_bar.progress(50, text="🌲 산림청 보도자료 수집 중 (3/5)...")
+forest_data = fetch_forest()
+
+progress_bar.progress(70, text="🏙️ 서울특별시 보도자료 집중 수집 중 (4/5)...")
+seoul_data = fetch_seoul()
+
+progress_bar.progress(90, text="📜 국회 상임위 발의법안 연동 중 (5/5)...")
+bills_data = fetch_assembly_bills()
+
+progress_bar.progress(100, text="✨ 모든 데이터 수집 및 병합 완료!")
+time.sleep(0.6)
+progress_bar.empty() # 100% 완료 후 깔끔하게 막대기 제거
+
+# 모든 데이터 병합
+all_data = molit_data + mcee_data + forest_data + seoul_data + bills_data
+df_total = pd.DataFrame(all_data)
 
 if not df_total.empty:
     search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
