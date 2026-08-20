@@ -5,10 +5,6 @@ import pandas as pd
 from urllib.parse import urljoin
 import re
 from concurrent.futures import ThreadPoolExecutor
-import urllib3
-
-# SSL 경고 메시지 숨김
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
@@ -110,30 +106,27 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 def fetch_molit_dept(item):
     try:
-        # 국토부 전용 방화벽 우회 헤더 설정 (Referer 필수)
-        molit_headers = HEADERS.copy()
-        molit_headers["Referer"] = "https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp"
+        resp = requests.get(item['link'], headers=HEADERS, timeout=5)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
         
-        resp = requests.get(item['link'], headers=molit_headers, timeout=5, verify=False)
-        if resp.status_code == 200:
-            resp.encoding = 'utf-8'
-            html = resp.text
-            
-            # 1. 첨부파일명 속 (OO과/팀/단/실) 패턴 파싱
-            m_file = re.search(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', html)
-            if m_file:
-                item['담당부서'] = m_file.group(1)
+        # 초기에 성공했던 파싱 로직 복원: 첨부파일 <a> 태그 텍스트에서 (OO과) 탐색
+        for a in soup.find_all('a'):
+            full_txt = a.get_text() + " " + a.get('title', '')
+            m = re.search(r'\(([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))\)', full_txt)
+            if m:
+                item['담당부서'] = m.group(1)
                 return item
-
-            # 2. '담당부서 : OO과' 텍스트 패턴 파싱
-            m_text = re.search(r'담당부서\s*[:]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', html)
-            if m_text:
-                item['담당부서'] = m_text.group(1)
-                return item
+                
+        # 예비 파싱: 본문 전체에서 '담당부서 : OO과' 탐색
+        m_page = re.search(r'담당부서\s*[:]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', soup.get_text())
+        if m_page:
+            item['담당부서'] = m_page.group(1)
+            return item
     except: pass
     return item
 
@@ -146,7 +139,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -155,12 +148,12 @@ def fetch_data():
                 if a_tag and len(tds) >= 4:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
-                    m_id = re.search(r'id=([^&]+)', raw_href)
-                    link = f"https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id={m_id.group(1)}" if m_id else urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
+                    # 원래 검증된 urljoin 방식으로 주소 복원 (파라미터 유실 방지)
+                    link = urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href.replace('&amp;', '&'))
                     date = tds[3].text.strip()
                     molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             molit_items = list(executor.map(fetch_molit_dept, molit_items))
         all_data.extend(molit_items)
     except: pass
