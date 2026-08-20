@@ -106,7 +106,7 @@ st.markdown("""
 st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/환노위 발의 법안 실시간 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
 def fetch_molit_dept_parallel(item):
     try:
@@ -124,70 +124,81 @@ def fetch_molit_dept_parallel(item):
 @st.cache_data(ttl=1800)
 def fetch_assembly_bills():
     bills = []
-    # 22대 국회 의원발의법률안 정식 API 엔드포인트
-    url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-    params = {
-        "Type": "json",
-        "pIndex": 1,
-        "pSize": 300,
-        "AGE": "22"
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=8)
-        data = resp.json()
-        if "nzmimeepazxkubdpn" in data:
-            rows = data["nzmimeepazxkubdpn"][1]["row"]
-            for r in rows:
-                comm = r.get("COMMITTEE") or ""
-                bill_name = r.get("BILL_NAME", "")
-                proposer = r.get("PROPOSER", "미정")
-                propose_dt = r.get("PROPOSE_DT", "")
-                bill_id = r.get("BILL_ID", "")
-                link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}" if bill_id else "https://likms.assembly.go.kr/bill/main.do"
+    likms_headers = HEADERS.copy()
+    likms_headers["Referer"] = "https://likms.assembly.go.kr/bill/main.do"
+    
+    # 국회 의안정보시스템(likms) 라이브 POST 조회
+    committees = [
+        ("📜 국토교통위원회", "국토교통위원회"),
+        ("📜 환경노동위원회", "환경노동위원회")
+    ]
+    
+    for comm_label, comm_name in committees:
+        try:
+            url = "https://likms.assembly.go.kr/bill/BillSearchResult.do"
+            payload = {
+                "srchKind": "B",
+                "currCommittee": comm_name,
+                "pageSize": "30",
+                "pIndex": "1",
+                "age": "22"
+            }
+            resp = requests.post(url, data=payload, headers=likms_headers, timeout=8)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for row in soup.select('table tbody tr'):
+                tds = row.find_all('td')
+                a_tag = row.find('a')
+                if a_tag and len(tds) >= 4:
+                    title = a_tag.text.strip()
+                    if not title or "등록된" in title or "없습니다" in title: continue
+                    
+                    href = a_tag.get('href', '')
+                    m_id = re.search(r"['\"]([A-Z0-9_]+)['\"]", href)
+                    if m_id:
+                        link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={m_id.group(1)}"
+                    else:
+                        link = "https://likms.assembly.go.kr/bill/main.do"
+                        
+                    proposer = tds[2].text.strip() if len(tds) > 2 else "미정"
+                    date = tds[3].text.strip() if len(tds) > 3 else "날짜미표기"
+                    
+                    bills.append({
+                        "기관": comm_label,
+                        "담당부서": f"발의: {proposer}",
+                        "날짜": date,
+                        "제목": title,
+                        "링크": link
+                    })
+        except: pass
+
+    # 예비 로직: likms 메인 페이지 최근 접수의안 라이브 파싱
+    if not bills:
+        try:
+            resp = requests.get("https://likms.assembly.go.kr/bill/main.do", headers=likms_headers, timeout=8)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            for a in soup.find_all('a', href=re.compile(r'billDetail\.do')):
+                title = a.text.strip()
+                if not title or len(title) < 5: continue
+                href = a.get('href', '')
+                m_id = re.search(r'billId=([A-Z0-9_]+)', href)
+                link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={m_id.group(1)}" if m_id else "https://likms.assembly.go.kr/bill/main.do"
                 
-                # 국토교통위원회 및 환경노동위원회 분류
-                if "국토" in comm:
-                    bills.append({
-                        "기관": "📜 국토교통위원회",
-                        "담당부서": f"발의: {proposer}",
-                        "날짜": propose_dt,
-                        "제목": bill_name,
-                        "링크": link
-                    })
-                elif any(kw in comm for kw in ["환경", "노동"]):
-                    bills.append({
-                        "기관": "📜 환경노동위원회",
-                        "담당부서": f"발의: {proposer}",
-                        "날짜": propose_dt,
-                        "제목": bill_name,
-                        "링크": link
-                    })
-                # 회부 전 키워드 기반 분류
-                elif not comm:
-                    if any(kw in bill_name for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산"]):
-                        bills.append({
-                            "기관": "📜 국토교통위원회",
-                            "담당부서": f"발의: {proposer}",
-                            "날짜": propose_dt,
-                            "제목": bill_name,
-                            "링크": link
-                        })
-                    elif any(kw in bill_name for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로"]):
-                        bills.append({
-                            "기관": "📜 환경노동위원회",
-                            "담당부서": f"발의: {proposer}",
-                            "날짜": propose_dt,
-                            "제목": bill_name,
-                            "링크": link
-                        })
-    except: pass
+                if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통"]):
+                    bills.append({"기관": "📜 국토교통위원회", "담당부서": "국회 의안정보", "날짜": "최근접수", "제목": title, "링크": link})
+                elif any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지"]):
+                    bills.append({"기관": "📜 환경노동위원회", "담당부서": "국회 의안정보", "날짜": "최근접수", "제목": title, "링크": link})
+        except: pass
+
     return bills
 
 @st.cache_data(ttl=1800)
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부 (원본 유지)
+    # 1. 국토교통부 (기존 검증 로직 유지)
     molit_items = []
     try:
         for page in range(1, 3):
@@ -209,7 +220,7 @@ def fetch_data():
         all_data.extend(molit_items)
     except: pass
 
-    # 2. 기후에너지환경부 (원본 유지)
+    # 2. 기후에너지환경부
     try:
         for page in range(1, 3):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
@@ -227,7 +238,7 @@ def fetch_data():
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
-    # 3. 산림청 (원본 유지)
+    # 3. 산림청
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
@@ -263,7 +274,7 @@ def fetch_data():
             all_data.extend(posts.values())
     except: pass
 
-    # 4. 서울특별시 (원본 유지)
+    # 4. 서울특별시
     try:
         for page in range(1, 3):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
@@ -291,7 +302,7 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("보도자료 및 국회 법안 데이터를 수집 중입니다..."):
+with st.spinner("보도자료 및 국회 의안정보 시스템 데이터를 가져오는 중입니다..."):
     df_press = fetch_data()
     bills_list = fetch_assembly_bills()
     df_bills = pd.DataFrame(bills_list)
