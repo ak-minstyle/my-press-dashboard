@@ -124,35 +124,62 @@ def fetch_molit_dept_parallel(item):
 @st.cache_data(ttl=1800)
 def fetch_assembly_bills():
     bills = []
-    url = "https://open.assembly.go.kr/portal/openapi/TVBLLCOMMITTEE"
+    # 22대 국회 의원발의법률안 정식 API 엔드포인트
+    url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
     params = {
-        "KEY": "sample",
         "Type": "json",
         "pIndex": 1,
-        "pSize": 100
+        "pSize": 300,
+        "AGE": "22"
     }
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = requests.get(url, params=params, timeout=8)
         data = resp.json()
-        if "TVBLLCOMMITTEE" in data:
-            rows = data["TVBLLCOMMITTEE"][1]["row"]
+        if "nzmimeepazxkubdpn" in data:
+            rows = data["nzmimeepazxkubdpn"][1]["row"]
             for r in rows:
-                comm = r.get("CURR_COMMITTEE", "")
-                if any(kw in comm for kw in ["국토", "환경", "노동"]):
-                    bill_name = r.get("BILL_NAME", "")
-                    proposer = r.get("PROPOSER", "미정")
-                    propose_dt = r.get("PROPOSE_DT", "")
-                    bill_id = r.get("BILL_ID", "")
-                    link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}" if bill_id else "https://likms.assembly.go.kr/bill/main.do"
-                    
-                    target_category = "📜 국토교통위원회" if "국토" in comm else "📜 환경노동위원회"
+                comm = r.get("COMMITTEE") or ""
+                bill_name = r.get("BILL_NAME", "")
+                proposer = r.get("PROPOSER", "미정")
+                propose_dt = r.get("PROPOSE_DT", "")
+                bill_id = r.get("BILL_ID", "")
+                link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}" if bill_id else "https://likms.assembly.go.kr/bill/main.do"
+                
+                # 국토교통위원회 및 환경노동위원회 분류
+                if "국토" in comm:
                     bills.append({
-                        "기관": target_category,
-                        "담당부서": f"발의자: {proposer}",
+                        "기관": "📜 국토교통위원회",
+                        "담당부서": f"발의: {proposer}",
                         "날짜": propose_dt,
                         "제목": bill_name,
                         "링크": link
                     })
+                elif any(kw in comm for kw in ["환경", "노동"]):
+                    bills.append({
+                        "기관": "📜 환경노동위원회",
+                        "담당부서": f"발의: {proposer}",
+                        "날짜": propose_dt,
+                        "제목": bill_name,
+                        "링크": link
+                    })
+                # 회부 전 키워드 기반 분류
+                elif not comm:
+                    if any(kw in bill_name for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산"]):
+                        bills.append({
+                            "기관": "📜 국토교통위원회",
+                            "담당부서": f"발의: {proposer}",
+                            "날짜": propose_dt,
+                            "제목": bill_name,
+                            "링크": link
+                        })
+                    elif any(kw in bill_name for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로"]):
+                        bills.append({
+                            "기관": "📜 환경노동위원회",
+                            "담당부서": f"발의: {proposer}",
+                            "날짜": propose_dt,
+                            "제목": bill_name,
+                            "링크": link
+                        })
     except: pass
     return bills
 
@@ -160,7 +187,7 @@ def fetch_assembly_bills():
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부
+    # 1. 국토교통부 (원본 유지)
     molit_items = []
     try:
         for page in range(1, 3):
@@ -182,7 +209,7 @@ def fetch_data():
         all_data.extend(molit_items)
     except: pass
 
-    # 2. 기후에너지환경부
+    # 2. 기후에너지환경부 (원본 유지)
     try:
         for page in range(1, 3):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
@@ -200,7 +227,7 @@ def fetch_data():
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
-    # 3. 산림청
+    # 3. 산림청 (원본 유지)
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
@@ -236,7 +263,7 @@ def fetch_data():
             all_data.extend(posts.values())
     except: pass
 
-    # 4. 서울특별시
+    # 4. 서울특별시 (원본 유지)
     try:
         for page in range(1, 3):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
@@ -266,9 +293,9 @@ with col_btn:
 
 with st.spinner("보도자료 및 국회 법안 데이터를 수집 중입니다..."):
     df_press = fetch_data()
-    df_bills = pd.DataFrame(fetch_assembly_bills())
+    bills_list = fetch_assembly_bills()
+    df_bills = pd.DataFrame(bills_list)
 
-# 통합 데이터프레임 병합
 df_total = pd.concat([df_press, df_bills], ignore_index=True) if not df_bills.empty else df_press
 
 if not df_total.empty:
