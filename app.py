@@ -123,82 +123,67 @@ def fetch_molit_dept_parallel(item):
 
 @st.cache_data(ttl=1800)
 def fetch_assembly_bills():
-    bills = []
-    likms_headers = HEADERS.copy()
-    likms_headers["Referer"] = "https://likms.assembly.go.kr/bill/main.do"
+    bills_dict = {}
     
-    # 국회 의안정보시스템(likms) 라이브 POST 수집 (API Key 미필요)
-    committees = [
-        ("📜 국토교통위원회", "국토교통위원회"),
-        ("📜 환경노동위원회", "환경노동위원회")
-    ]
-    
-    for comm_label, comm_name in committees:
-        try:
-            url = "https://likms.assembly.go.kr/bill/BillSearchResult.do"
-            payload = {
-                "srchKind": "B",
-                "currCommittee": comm_name,
-                "pageSize": "30",
-                "pIndex": "1",
-                "age": "22"
-            }
-            resp = requests.post(url, data=payload, headers=likms_headers, timeout=6)
+    # 국민참여입법센터 (국회 의안정보 시스템 데이터 실시간 라이브 연동)
+    try:
+        for page in range(1, 4):
+            url = f"https://opinion.lawmaking.go.kr/gcom/nsmLmSts/out?pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=8)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
             for row in soup.select('table tbody tr'):
                 tds = row.find_all('td')
-                a_tag = row.find('a')
-                if a_tag and len(tds) >= 4:
-                    title = a_tag.text.strip()
-                    if not title or "등록된" in title or "없습니다" in title: continue
+                if len(tds) >= 3:
+                    row_text = row.get_text(separator=' ', strip=True)
+                    a_tag = row.find('a')
                     
-                    href = a_tag.get('href', '')
-                    m_id = re.search(r"['\"]([A-Z0-9_]+)['\"]", href)
-                    if m_id:
-                        link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={m_id.group(1)}"
-                    else:
-                        link = "https://likms.assembly.go.kr/bill/main.do"
-                        
-                    proposer = tds[2].text.strip() if len(tds) > 2 else "미정"
-                    date = tds[3].text.strip() if len(tds) > 3 else "날짜미표기"
+                    # 의안 번호(7자리 숫자) 추출
+                    m_id = re.search(r'(\d{7})', row_text)
+                    bill_id = m_id.group(1) if m_id else ""
+                    if not bill_id or bill_id in bills_dict: continue
                     
-                    bills.append({
-                        "기관": comm_label,
-                        "담당부서": f"발의: {proposer}",
-                        "날짜": date,
-                        "제목": title,
-                        "링크": link
-                    })
-        except: pass
-
-    # 예비 로직: likms 메인접수 안건 실시간 보완 수집
-    if not bills:
-        try:
-            resp = requests.get("https://likms.assembly.go.kr/bill/main.do", headers=likms_headers, timeout=6)
-            resp.encoding = 'utf-8'
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            for a in soup.find_all('a', href=re.compile(r'billDetail\.do')):
-                title = a.text.strip()
-                if not title or len(title) < 5: continue
-                href = a.get('href', '')
-                m_id = re.search(r'billId=([A-Z0-9_]+)', href)
-                link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={m_id.group(1)}" if m_id else "https://likms.assembly.go.kr/bill/main.do"
-                
-                if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통"]):
-                    bills.append({"기관": "📜 국토교통위원회", "담당부서": "국회 의안정보", "날짜": "최근접수", "제목": title, "링크": link})
-                elif any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지"]):
-                    bills.append({"기관": "📜 환경노동위원회", "담당부서": "국회 의안정보", "날짜": "최근접수", "제목": title, "링크": link})
-        except: pass
-
-    return bills
+                    link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}"
+                    
+                    title = a_tag.text.strip() if a_tag else tds[0].text.strip()
+                    proposer_raw = tds[1].text.strip() if len(tds) > 1 else "국회의원"
+                    comm_raw = tds[2].text.strip() if len(tds) > 2 else ""
+                    
+                    # 날짜 및 발의자 정리
+                    dm = re.search(r'\((20\d{2}[-.\s]\d{1,2}[-.\s]\d{1,2})\)', proposer_raw)
+                    date = dm.group(1).replace(' ', '').replace('.', '-') if dm else "최근접수"
+                    proposer = re.sub(r'\(20\d{2}.*?\)', '', proposer_raw).strip()
+                    if not proposer: proposer = "국회의원"
+                    
+                    # 소관위 분류 (국토교통위 vs 환경노동위)
+                    is_kokto = "국토" in comm_raw or any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통"])
+                    is_hwan = any(kw in comm_raw for kw in ["환경", "노동", "기후"]) or any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지"])
+                    
+                    if is_kokto:
+                        bills_dict[bill_id] = {
+                            "기관": "📜 국토교통위원회",
+                            "담당부서": f"발의: {proposer}",
+                            "날짜": date,
+                            "제목": title,
+                            "링크": link
+                        }
+                    elif is_hwan:
+                        bills_dict[bill_id] = {
+                            "기관": "📜 환경노동위원회",
+                            "담당부서": f"발의: {proposer}",
+                            "날짜": date,
+                            "제목": title,
+                            "링크": link
+                        }
+    except: pass
+    return list(bills_dict.values())
 
 @st.cache_data(ttl=1800)
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부 (원본 동작 방식 100% 동일 유지)
+    # 1. 국토교통부 (원본 동작 방식 100% 유지)
     molit_items = []
     try:
         for page in range(1, 3):
@@ -302,14 +287,14 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("보도자료 및 국회 의안정보 수집 중입니다..."):
+with st.spinner("보도자료 및 국회 법안 수집 중입니다..."):
     df_press = fetch_data()
     df_bills = pd.DataFrame(fetch_assembly_bills())
 
 df_total = pd.concat([df_press, df_bills], ignore_index=True) if not df_bills.empty else df_press
 
 if not df_total.empty:
-    search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 발의자)", "")
+    search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
