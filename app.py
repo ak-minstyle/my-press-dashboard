@@ -116,7 +116,7 @@ st.markdown("""
 st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/기후에너지환경노동위 발의 법안 실시간 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
 def fetch_molit_dept_parallel(item):
@@ -132,7 +132,6 @@ def fetch_molit_dept_parallel(item):
     except: pass
     return item
 
-# 각 기관별 수집 함수를 분리하여 진행률 표시에 활용 (show_spinner=False 적용)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_molit():
     items = []
@@ -207,13 +206,20 @@ def fetch_forest():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_seoul():
     items = []
+    seen_links = set()  # 🔥 중복 게시글 차단용 세트
+    url = "https://www.seoul.go.kr/news/news_report.do"
+    
     try:
         for page in range(1, 6):
-            # 🔥 서울시 게시판 고유 ID(bbsNo=158)를 URL에 명시하여 페이지 넘김 오류 완벽 해결
-            url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            # 🔥 서울시 게시판은 POST 폼 데이터 형태로 pageIndex를 넘겨야만 실제 페이지가 이동함
+            payload = {
+                "bbsNo": "158",
+                "pageIndex": str(page)
+            }
+            resp = requests.post(url, data=payload, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
+            
             for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
@@ -226,6 +232,11 @@ def fetch_seoul():
                         link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={n_val}"
                     else:
                         link = urljoin("https://www.seoul.go.kr/news/", raw_href)
+                    
+                    # 🔥 중복 링크 방지
+                    if link in seen_links:
+                        continue
+                    seen_links.add(link)
                         
                     date = tds[-1].text.strip()
                     dept = tds[-2].get_text(separator=' ', strip=True)
@@ -274,7 +285,6 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-# 🔥 예쁜 0~100% 프로그레스 바 적용
 progress_bar = st.progress(0, text="데이터 수집 준비 중...")
 
 progress_bar.progress(10, text="🏢 국토교통부 보도자료 수집 중 (1/5)...")
@@ -293,10 +303,9 @@ progress_bar.progress(90, text="📜 국회 상임위 발의법안 연동 중 (5
 bills_data = fetch_assembly_bills()
 
 progress_bar.progress(100, text="✨ 모든 데이터 수집 및 병합 완료!")
-time.sleep(0.6)
-progress_bar.empty() # 100% 완료 후 깔끔하게 막대기 제거
+time.sleep(0.5)
+progress_bar.empty()
 
-# 모든 데이터 병합
 all_data = molit_data + mcee_data + forest_data + seoul_data + bills_data
 df_total = pd.DataFrame(all_data)
 
