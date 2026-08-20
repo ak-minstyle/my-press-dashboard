@@ -121,21 +121,6 @@ def fetch_molit_dept(item):
     except: pass
     return item
 
-def fetch_forest_date(item):
-    try:
-        # 산림청 타임아웃을 7초로 충분히 설정
-        resp = requests.get(item['link'], headers=HEADERS, timeout=7)
-        resp.encoding = 'utf-8'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        text = soup.get_text()
-        
-        # 202x-xx-xx 형태 날짜 정규식 매칭
-        dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', text)
-        if dm:
-            item['날짜'] = dm.group(1).replace('.', '-').replace('/', '-')
-    except: pass
-    return item
-
 @st.cache_data(ttl=1800)
 def fetch_data():
     all_data = []
@@ -182,8 +167,7 @@ def fetch_data():
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
-    # 3. 산림청
-    forest_items = []
+    # 3. 산림청 (목록 페이지 텍스트에서 날짜 직접 파싱)
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
@@ -193,22 +177,31 @@ def fetch_data():
             posts = {}
             for a in soup.find_all('a', href=re.compile(r'nttId=')):
                 raw_href = a.get('href', '')
-                m = re.search(r'nttId=(\d+)', raw_href)
-                if m:
-                    ntt_id = m.group(1)
-                    # 원래 검증된 urljoin 방식으로 복원
-                    link = urljoin("https://www.forest.go.kr", raw_href)
-                    clean_text = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
-                    if ntt_id not in posts or len(clean_text) > len(posts[ntt_id]['title']):
-                        posts[ntt_id] = {'link': link, 'title': clean_text}
-            for ntt_id, info in posts.items():
-                if len(info['title']) >= 5:
-                    forest_items.append({"기관": "산림청", "담당부서": "산림청", "날짜": "확인 불가", "제목": info['title'], "링크": info['link']})
-        
-        # 병렬 스레드 수를 5로 조정하여 산림청 서버 부담 방지
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            forest_items = list(executor.map(fetch_forest_date, forest_items))
-        all_data.extend(forest_items)
+                ntt_m = re.search(r'nttId=(\d+)', raw_href)
+                if not ntt_m: continue
+                
+                ntt_id = ntt_m.group(1)
+                link = urljoin("https://www.forest.go.kr", raw_href)
+                
+                # 게시글 부모 영역 텍스트 전체에서 날짜(202X-XX-XX) 검색
+                parent_box = a.find_parent(['li', 'tr', 'td', 'div'])
+                box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else a.get_text()
+                
+                dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', box_text)
+                date = dm.group(1).replace('.', '-').replace('/', '-') if dm else "날짜 미표기"
+                
+                clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
+                clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
+                
+                if ntt_id not in posts or len(clean_title) > len(posts[ntt_id]['제목']):
+                    posts[ntt_id] = {
+                        "기관": "산림청",
+                        "담당부서": "산림청",
+                        "날짜": date,
+                        "제목": clean_title,
+                        "링크": link
+                    }
+            all_data.extend(posts.values())
     except: pass
 
     # 4. 서울특별시
