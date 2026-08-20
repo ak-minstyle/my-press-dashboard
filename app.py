@@ -110,14 +110,11 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 def fetch_molit_dept(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=5)
-        resp.encoding = 'utf-8'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        for f in soup.find_all('a'):
-            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
-            if m:
-                item['담당부서'] = m.group(1)
-                break
+        resp = requests.get(item['link'], headers=HEADERS, timeout=4)
+        # HTML DOM 파싱 없이 텍스트에서 첨부파일명 속 (OO과/팀/단) 단일 정규식 검색
+        m = re.search(r'\(([가-힣]+(과|팀|단|실|센터|부|관))\)', resp.text)
+        if m:
+            item['담당부서'] = m.group(1)
     except: pass
     return item
 
@@ -167,7 +164,7 @@ def fetch_data():
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
-    # 3. 산림청 (목록 페이지 텍스트에서 날짜 직접 파싱)
+    # 3. 산림청
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
@@ -183,7 +180,6 @@ def fetch_data():
                 ntt_id = ntt_m.group(1)
                 link = urljoin("https://www.forest.go.kr", raw_href)
                 
-                # 게시글 부모 영역 텍스트 전체에서 날짜(202X-XX-XX) 검색
                 parent_box = a.find_parent(['li', 'tr', 'td', 'div'])
                 box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else a.get_text()
                 
