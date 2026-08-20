@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from urllib.parse import urljoin
 import re
-from concurrent.futures import ThreadPoolExecutor
 
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
@@ -106,51 +105,16 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-
-def fetch_molit_dept(item):
-    try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=8)
-        if resp.status_code == 200:
-            # 안전한 한글 인코딩 변환 (UTF-8 시도 후 EUC-KR 예비)
-            try:
-                html_text = resp.content.decode('utf-8')
-            except UnicodeDecodeError:
-                html_text = resp.content.decode('euc-kr', errors='ignore')
-
-            exclude = {'국토교통부', '보도자료', '참고자료', '배포시부터', '즉시배포', '조간', '석간', '붙임', '수정본', '최종', '개정안', '상세보기'}
-
-            # 1. 첨부파일명 및 본문 속 (OO과/팀/단/실) 형태 추출
-            matches = re.findall(r'[\(\[\{]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]\}]', html_text)
-            for m in matches:
-                if m not in exclude:
-                    item['담당부서'] = m
-                    return item
-
-            # 2. '담당부서 : OO과' 라벨 텍스트 패턴 추출
-            m_label = re.search(r'(?:담당부서|작성부서|부서명|담당과)\s*[:\s]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', html_text)
-            if m_label and m_label.group(1) not in exclude:
-                item['담당부서'] = m_label.group(1)
-                return item
-
-            # 3. 확장자 앞의 부서명 추출 (예: 주택정책과.hwpx)
-            m_file = re.search(r'([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))\.(?:hwpx?|pdf|docx?|xlsx?|zip|hwp)', html_text, re.IGNORECASE)
-            if m_file and m_file.group(1) not in exclude:
-                item['담당부서'] = m_file.group(1)
-                return item
-    except: pass
-    return item
-
 @st.cache_data(ttl=1800)
 def fetch_data():
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     all_data = []
 
-    # 1. 국토교통부
-    molit_items = []
+    # 1. 국토교통부 (초기 성공 100% 단순 원복 코드)
     try:
         for page in range(1, 3):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=10)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -158,21 +122,27 @@ def fetch_data():
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 4:
                     title = a_tag.text.strip()
-                    raw_href = a_tag.get('href', '')
-                    link = urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href.replace('&amp;', '&'))
+                    link = "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']
                     date = tds[3].text.strip()
-                    molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
-        
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            molit_items = list(executor.map(fetch_molit_dept, molit_items))
-        all_data.extend(molit_items)
+                    dept = "국토교통부"
+                    try:
+                        d_resp = requests.get(link, headers=headers, timeout=5)
+                        d_resp.encoding = 'utf-8'
+                        d_soup = BeautifulSoup(d_resp.text, 'html.parser')
+                        for f in d_soup.find_all('a'):
+                            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
+                            if m:
+                                dept = m.group(1)
+                                break
+                    except: pass
+                    all_data.append({"기관": "국토교통부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
     # 2. 기후에너지환경부
     try:
         for page in range(1, 3):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=10)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -190,7 +160,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=10)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             posts = {}
@@ -226,7 +196,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=10)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
