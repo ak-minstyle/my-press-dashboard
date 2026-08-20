@@ -7,7 +7,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 
 # 웹 페이지 기본 설정
-st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
+st.set_page_config(page_title="통합 보도자료 & 국회 법안 대시보드", page_icon="📰", layout="wide")
 
 # 다크모드 방어 및 표 스타일링
 st.markdown("""
@@ -103,12 +103,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📰 정부·지자체 통합 보도자료 대시보드")
-st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
+st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시보드")
+st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/환노위 발의 법안 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-# 국토부 상세페이지 병렬 추출 함수 (원래 검증된 로직 동일 적용)
 def fetch_molit_dept_parallel(item):
     try:
         d_resp = requests.get(item['링크'], headers=HEADERS, timeout=4)
@@ -121,6 +120,41 @@ def fetch_molit_dept_parallel(item):
                 break
     except: pass
     return item
+
+@st.cache_data(ttl=1800)
+def fetch_assembly_bills():
+    bills = []
+    url = "https://open.assembly.go.kr/portal/openapi/TVBLLCOMMITTEE"
+    params = {
+        "KEY": "sample",
+        "Type": "json",
+        "pIndex": 1,
+        "pSize": 100
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        data = resp.json()
+        if "TVBLLCOMMITTEE" in data:
+            rows = data["TVBLLCOMMITTEE"][1]["row"]
+            for r in rows:
+                comm = r.get("CURR_COMMITTEE", "")
+                if any(kw in comm for kw in ["국토", "환경", "노동"]):
+                    bill_name = r.get("BILL_NAME", "")
+                    proposer = r.get("PROPOSER", "미정")
+                    propose_dt = r.get("PROPOSE_DT", "")
+                    bill_id = r.get("BILL_ID", "")
+                    link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}" if bill_id else "https://likms.assembly.go.kr/bill/main.do"
+                    
+                    target_category = "📜 국토교통위원회" if "국토" in comm else "📜 환경노동위원회"
+                    bills.append({
+                        "기관": target_category,
+                        "담당부서": f"발의자: {proposer}",
+                        "날짜": propose_dt,
+                        "제목": bill_name,
+                        "링크": link
+                    })
+    except: pass
+    return bills
 
 @st.cache_data(ttl=1800)
 def fetch_data():
@@ -143,7 +177,6 @@ def fetch_data():
                     date = tds[3].text.strip()
                     molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         
-        # 병렬 처리로 8개씩 동시 수집 (정확도 유지 + 속도 최적화)
         with ThreadPoolExecutor(max_workers=8) as executor:
             molit_items = list(executor.map(fetch_molit_dept_parallel, molit_items))
         all_data.extend(molit_items)
@@ -231,28 +264,32 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("실시간으로 각 부처 데이터를 가져오는 중입니다..."):
-    df = fetch_data()
+with st.spinner("보도자료 및 국회 법안 데이터를 수집 중입니다..."):
+    df_press = fetch_data()
+    df_bills = pd.DataFrame(fetch_assembly_bills())
 
-if not df.empty:
-    search_kw = st.text_input("🔍 실시간 키워드 검색 (제목 또는 담당부서)", "")
+# 통합 데이터프레임 병합
+df_total = pd.concat([df_press, df_bills], ignore_index=True) if not df_bills.empty else df_press
+
+if not df_total.empty:
+    search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
-        df = df[df['제목'].str.contains(search_kw, case=False, na=False) | df['담당부서'].str.contains(search_kw, case=False, na=False)]
+        df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시"])
+    tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시", "📜 국토위 법안", "📜 환노위 법안"])
 
     def render_custom_table(filtered_df):
         if filtered_df.empty:
-            st.info("검색 조건에 해당되는 보도자료가 없습니다.")
+            st.info("해당 조건의 데이터가 없습니다.")
             return
         
         st.write(f"총 **{len(filtered_df)}**건 표시 중")
         
         table_html = "<table class='custom-table'><thead><tr>"
-        table_html += "<th style='width: 120px;'>기관</th>"
-        table_html += "<th style='width: 160px;'>담당부서</th>"
+        table_html += "<th style='width: 140px;'>기관 / 구분</th>"
+        table_html += "<th style='width: 160px;'>담당부서 / 발의자</th>"
         table_html += "<th style='width: 110px;'>날짜</th>"
-        table_html += "<th>보도자료 제목</th>"
+        table_html += "<th>보도자료 제목 / 법안명</th>"
         table_html += "</tr></thead><tbody>"
         
         for _, r in filtered_df.iterrows():
@@ -266,10 +303,12 @@ if not df.empty:
         table_html += "</tbody></table>"
         st.markdown(table_html, unsafe_allow_html=True)
 
-    with tabs[0]: render_custom_table(df)
-    with tabs[1]: render_custom_table(df[df['기관'] == '국토교통부'])
-    with tabs[2]: render_custom_table(df[df['기관'] == '기후에너지환경부'])
-    with tabs[3]: render_custom_table(df[df['기관'] == '산림청'])
-    with tabs[4]: render_custom_table(df[df['기관'] == '서울특별시'])
+    with tabs[0]: render_custom_table(df_total)
+    with tabs[1]: render_custom_table(df_total[df_total['기관'] == '국토교통부'])
+    with tabs[2]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'])
+    with tabs[3]: render_custom_table(df_total[df_total['기관'] == '산림청'])
+    with tabs[4]: render_custom_table(df_total[df_total['기관'] == '서울특별시'])
+    with tabs[5]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'])
+    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '📜 환경노동위원회'])
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
