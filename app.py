@@ -110,38 +110,33 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 def fetch_molit_dept(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=5)
-        resp.encoding = 'utf-8'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        # 1. 첨부파일 영역/링크만 집중 수집
-        file_texts = []
-        for a in soup.find_all('a'):
-            href = a.get('href', '')
-            title = a.get('title', '')
-            text = a.get_text()
-            full_str = f"{href} {title} {text}"
-            
-            # 파일 다운로드 관련 링크 또는 파일 확장자가 들어있는 경우
-            if any(ext in full_str.lower() for ext in ['.hwp', '.hwpx', '.pdf', '.doc', '.xls', 'file', 'download', 'down']):
-                file_texts.append(f"{title} {text}")
-        
-        combined_file_str = " ".join(file_texts)
-        
-        # 괄호 속 부서명 정규식 추출 (예: (주택정책과), (건축정책과))
-        exclude_words = {'국토교통부', '보도자료', '참고자료', '붙임', '수정본', '최종', '개정안'}
-        matches = re.findall(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', combined_file_str)
-        
-        for m in matches:
-            if m not in exclude_words:
-                item['담당부서'] = m
+        resp = requests.get(item['link'], headers=HEADERS, timeout=8)
+        if resp.status_code == 200:
+            # 안전한 한글 인코딩 변환 (UTF-8 시도 후 EUC-KR 예비)
+            try:
+                html_text = resp.content.decode('utf-8')
+            except UnicodeDecodeError:
+                html_text = resp.content.decode('euc-kr', errors='ignore')
+
+            exclude = {'국토교통부', '보도자료', '참고자료', '배포시부터', '즉시배포', '조간', '석간', '붙임', '수정본', '최종', '개정안', '상세보기'}
+
+            # 1. 첨부파일명 및 본문 속 (OO과/팀/단/실) 형태 추출
+            matches = re.findall(r'[\(\[\{]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]\}]', html_text)
+            for m in matches:
+                if m not in exclude:
+                    item['담당부서'] = m
+                    return item
+
+            # 2. '담당부서 : OO과' 라벨 텍스트 패턴 추출
+            m_label = re.search(r'(?:담당부서|작성부서|부서명|담당과)\s*[:\s]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', html_text)
+            if m_label and m_label.group(1) not in exclude:
+                item['담당부서'] = m_label.group(1)
                 return item
 
-        # 2. 예비: 첨부파일 텍스트에서 안 나올 경우 본문 전체에서 파일명 검색
-        all_matches = re.findall(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', soup.get_text())
-        for m in all_matches:
-            if m not in exclude_words:
-                item['담당부서'] = m
+            # 3. 확장자 앞의 부서명 추출 (예: 주택정책과.hwpx)
+            m_file = re.search(r'([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))\.(?:hwpx?|pdf|docx?|xlsx?|zip|hwp)', html_text, re.IGNORECASE)
+            if m_file and m_file.group(1) not in exclude:
+                item['담당부서'] = m_file.group(1)
                 return item
     except: pass
     return item
