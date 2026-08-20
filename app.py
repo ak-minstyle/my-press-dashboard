@@ -110,11 +110,21 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 def fetch_molit_dept(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=4)
-        # HTML DOM 파싱 없이 텍스트에서 첨부파일명 속 (OO과/팀/단) 단일 정규식 검색
-        m = re.search(r'\(([가-힣]+(과|팀|단|실|센터|부|관))\)', resp.text)
-        if m:
-            item['담당부서'] = m.group(1)
+        resp = requests.get(item['link'], headers=HEADERS, timeout=5)
+        resp.encoding = 'utf-8'  # 한글 인코딩 명시 필수
+        html_text = resp.text
+        
+        # 1. 첨부파일명 또는 본문 속 (OO과/팀/단/실) 패턴 우선 추출
+        m_file = re.search(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', html_text)
+        if m_file:
+            item['담당부서'] = m_file.group(1)
+            return item
+
+        # 2. 담당부서/작성부서 라벨 항목 추출 (예비 로직)
+        m_label = re.search(r'(?:담당부서|작성부서|부서명)\s*[:]?\s*([가-힣]+(과|팀|단|실|센터|부|관))', html_text)
+        if m_label:
+            item['담당부서'] = m_label.group(1)
+            return item
     except: pass
     return item
 
