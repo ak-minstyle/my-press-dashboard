@@ -3,8 +3,8 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 from urllib.parse import urljoin
-import time
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
@@ -12,23 +12,17 @@ st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="�
 # 다크모드 방어 및 표 스타일링
 st.markdown("""
     <style>
-        /* 1. 메인 배경 및 전체 기본 글자색 고정 */
         html, body, [data-testid="stAppViewContainer"], .stApp, .main, .block-container {
             background-color: #ffffff !important;
             color: #0f172a !important;
         }
-        
-        /* 2. 일반 텍스트 요소 글자색 고정 */
         h1, h2, h3, h4, h5, h6, p, span, label, div {
             color: #0f172a !important;
         }
-
-        /* 3. 탭(Tabs) 영역 고대비 스타일링 */
         div[data-baseweb="tab-list"] {
             background-color: #ffffff !important;
             border-bottom: 2px solid #cbd5e1 !important;
         }
-        
         div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
             background-color: #f1f5f9 !important;
             border: 1px solid #cbd5e1 !important;
@@ -42,7 +36,6 @@ st.markdown("""
             font-weight: bold !important;
             font-size: 15px !important;
         }
-
         div[data-baseweb="tab-list"] button[aria-selected="true"] {
             background-color: #2563eb !important;
             border-color: #2563eb !important;
@@ -51,8 +44,6 @@ st.markdown("""
             color: #ffffff !important;
             font-weight: bold !important;
         }
-
-        /* 4. 검색창 및 버튼 라이트 모드 고정 */
         div[data-baseweb="input"] {
             background-color: #f8fafc !important;
             border: 1px solid #cbd5e1 !important;
@@ -72,8 +63,6 @@ st.markdown("""
             background-color: #2563eb !important;
             color: #ffffff !important;
         }
-
-        /* 5. 보도자료 표(Table) 스타일 - 줄바꿈 방지(nowrap) 설정 */
         .custom-table {
             width: 100%;
             border-collapse: collapse;
@@ -117,16 +106,42 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+# 병렬 처리용 서브 함수들
+def fetch_molit_dept(item):
+    try:
+        resp = requests.get(item['link'], headers=HEADERS, timeout=3)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        for f in soup.find_all('a'):
+            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
+            if m:
+                item['담당부서'] = m.group(1)
+                break
+    except: pass
+    return item
+
+def fetch_forest_date(item):
+    try:
+        resp = requests.get(item['link'], headers=HEADERS, timeout=3)
+        resp.encoding = 'utf-8'
+        dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', BeautifulSoup(resp.text, 'html.parser').get_text())
+        if dm:
+            item['날짜'] = dm.group(1).replace('.', '-').replace('/', '-')
+    except: pass
+    return item
+
 @st.cache_data(ttl=1800)
 def fetch_data():
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     all_data = []
 
     # 1. 국토교통부
+    molit_items = []
     try:
         for page in range(1, 3):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -135,33 +150,22 @@ def fetch_data():
                 if a_tag and len(tds) >= 4:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
-                    
-                    if 'id=' in raw_href:
-                        m_id = re.search(r'id=([^&]+)', raw_href)
-                        link = f"https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id={m_id.group(1)}" if m_id else urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
-                    else:
-                        link = urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
-                        
+                    m_id = re.search(r'id=([^&]+)', raw_href)
+                    link = f"https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id={m_id.group(1)}" if m_id else urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
                     date = tds[3].text.strip()
-                    dept = "국토교통부"
-                    try:
-                        d_resp = requests.get(link, headers=headers, timeout=5)
-                        d_resp.encoding = 'utf-8'
-                        d_soup = BeautifulSoup(d_resp.text, 'html.parser')
-                        for f in d_soup.find_all('a'):
-                            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
-                            if m:
-                                dept = m.group(1)
-                                break
-                    except: pass
-                    all_data.append({"기관": "국토교통부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
+                    molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
+        
+        # 멀티스레딩으로 상세페이지 동시에 10개씩 접속
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            molit_items = list(executor.map(fetch_molit_dept, molit_items))
+        all_data.extend(molit_items)
     except: pass
 
     # 2. 기후에너지환경부
     try:
         for page in range(1, 3):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -169,18 +173,18 @@ def fetch_data():
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 5:
                     title = a_tag.text.strip()
-                    raw_href = a_tag.get('href', '')
-                    link = urljoin("https://www.mcee.go.kr/home/web/", raw_href)
+                    link = urljoin("https://www.mcee.go.kr/home/web/", a_tag.get('href', ''))
                     date = tds[-2].text.strip()
                     dept = tds[-4].get_text(separator=' ', strip=True)
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
     # 3. 산림청
+    forest_items = []
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             posts = {}
@@ -193,22 +197,20 @@ def fetch_data():
                     if ntt_id not in posts or len(clean_text) > len(posts[ntt_id]['title']):
                         posts[ntt_id] = {'link': link, 'title': clean_text}
             for ntt_id, info in posts.items():
-                if len(info['title']) < 5: continue
-                date = "확인 불가"
-                try:
-                    d_resp = requests.get(info['link'], headers=headers, timeout=5)
-                    d_resp.encoding = 'utf-8'
-                    dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', BeautifulSoup(d_resp.text, 'html.parser').get_text())
-                    if dm: date = dm.group(1).replace('.', '-').replace('/', '-')
-                except: pass
-                all_data.append({"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": info['title'], "링크": info['link']})
+                if len(info['title']) >= 5:
+                    forest_items.append({"기관": "산림청", "담당부서": "산림청", "날짜": "확인 불가", "제목": info['title'], "링크": info['link']})
+        
+        # 멀티스레딩으로 날짜 추출 동시에 실행
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            forest_items = list(executor.map(fetch_forest_date, forest_items))
+        all_data.extend(forest_items)
     except: pass
 
     # 4. 서울특별시
     try:
         for page in range(1, 3):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -217,14 +219,8 @@ def fetch_data():
                 if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
-                    
                     ntt_m = re.search(r'nttNo=(\d+)|(\d{5,})', raw_href)
-                    if ntt_m:
-                        ntt_no = ntt_m.group(1) or ntt_m.group(2)
-                        link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_no}"
-                    else:
-                        link = urljoin("https://www.seoul.go.kr/news/", raw_href)
-
+                    link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.seoul.go.kr/news/", raw_href)
                     date = tds[-1].text.strip()
                     dept = tds[-2].get_text(separator=' ', strip=True)
                     all_data.append({"기관": "서울특별시", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
@@ -238,7 +234,7 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("실시간으로 각 부처 데이터를 가져오는 중입니다..."):
+with st.spinner("실시간으로 각 부처 데이터를 빠르게 가져오는 중입니다..."):
     df = fetch_data()
 
 if not df.empty:
