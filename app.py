@@ -144,11 +144,11 @@ def fetch_assembly_bills():
                     title = a_tag.text.strip() if a_tag else tds[0].text.strip()
                     if not title or len(title) < 3: continue
                     
-                    # likms 전용 PRC_ / ARC_ 고유 ID 파싱
+                    # likms 전용 PRC_ / ARC_ 고유 ID 파싱 및 정밀 URL 매핑
                     m_prc = re.search(r'((?:PRC|ARC)_[A-Z0-9]+)', row_html)
                     if m_prc:
                         bill_id = m_prc.group(1)
-                        link = f"https://likms.assembly.go.kr/bill/billDetail.do?billId={bill_id}"
+                        link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
                     else:
                         link = "https://likms.assembly.go.kr/bill/main.do"
                         bill_id = title
