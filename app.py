@@ -5,6 +5,10 @@ import pandas as pd
 from urllib.parse import urljoin
 import re
 from concurrent.futures import ThreadPoolExecutor
+import urllib3
+
+# SSL 경고 메시지 숨김
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
@@ -106,28 +110,26 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
 def fetch_molit_dept(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=6)
+        # 국토부 전용 방화벽 우회 헤더 설정 (Referer 필수)
+        molit_headers = HEADERS.copy()
+        molit_headers["Referer"] = "https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp"
+        
+        resp = requests.get(item['link'], headers=molit_headers, timeout=5, verify=False)
         if resp.status_code == 200:
-            resp.encoding = resp.apparent_encoding or 'utf-8'
+            resp.encoding = 'utf-8'
             html = resp.text
             
-            # 1. 첨부파일 파일명 속 (OO과/팀/단/실) 패턴 1순위 파싱 (예: ...보도자료(주택정책과).hwpx)
-            m_file = re.search(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]\.(?:hwpx?|pdf|docx?|xlsx?|zip|hwp)', html, re.IGNORECASE)
+            # 1. 첨부파일명 속 (OO과/팀/단/실) 패턴 파싱
+            m_file = re.search(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', html)
             if m_file:
                 item['담당부서'] = m_file.group(1)
                 return item
 
-            # 2. 첨부파일명 외 일반 괄호 속 부서명 2순위 파싱
-            m_bracket = re.search(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', html)
-            if m_bracket:
-                item['담당부서'] = m_bracket.group(1)
-                return item
-
-            # 3. 본문 '담당부서 : OO과' 3순위 파싱
+            # 2. '담당부서 : OO과' 텍스트 패턴 파싱
             m_text = re.search(r'담당부서\s*[:]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', html)
             if m_text:
                 item['담당부서'] = m_text.group(1)
@@ -144,7 +146,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -158,8 +160,7 @@ def fetch_data():
                     date = tds[3].text.strip()
                     molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         
-        # 동시 접속수를 3개로 낮추어 국토부 방화벽 블록 회피
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             molit_items = list(executor.map(fetch_molit_dept, molit_items))
         all_data.extend(molit_items)
     except: pass
