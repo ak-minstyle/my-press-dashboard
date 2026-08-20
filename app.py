@@ -9,7 +9,7 @@ import re
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
 
-# 다크모드 방어 및 표 줄바꿈(white-space: nowrap) 방지 스타일링
+# 다크모드 방어 및 표 스타일링
 st.markdown("""
     <style>
         /* 1. 메인 배경 및 전체 기본 글자색 고정 */
@@ -73,7 +73,7 @@ st.markdown("""
             color: #ffffff !important;
         }
 
-        /* 5. 보도자료 표(Table) 스타일 - 줄바꿈 방지(nowrap) 핵심 설정 */
+        /* 5. 보도자료 표(Table) 스타일 - 줄바꿈 방지(nowrap) 설정 */
         .custom-table {
             width: 100%;
             border-collapse: collapse;
@@ -95,7 +95,6 @@ st.markdown("""
             color: #334155 !important;
             text-align: left;
         }
-        /* 제목 제외한 나머지는 강제 한 줄 고정 */
         .nowrap-col {
             white-space: nowrap !important;
         }
@@ -135,7 +134,14 @@ def fetch_data():
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 4:
                     title = a_tag.text.strip()
-                    link = "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']
+                    raw_href = a_tag.get('href', '')
+                    
+                    if 'id=' in raw_href:
+                        m_id = re.search(r'id=([^&]+)', raw_href)
+                        link = f"https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id={m_id.group(1)}" if m_id else urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
+                    else:
+                        link = urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href)
+                        
                     date = tds[3].text.strip()
                     dept = "국토교통부"
                     try:
@@ -163,7 +169,8 @@ def fetch_data():
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 5:
                     title = a_tag.text.strip()
-                    link = urljoin("https://www.mcee.go.kr", a_tag['href'])
+                    raw_href = a_tag.get('href', '')
+                    link = urljoin("https://www.mcee.go.kr/home/web/", raw_href)
                     date = tds[-2].text.strip()
                     dept = tds[-4].get_text(separator=' ', strip=True)
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
@@ -181,7 +188,7 @@ def fetch_data():
                 m = re.search(r'nttId=(\d+)', a.get('href', ''))
                 if m:
                     ntt_id = m.group(1)
-                    link = urljoin("https://www.forest.go.kr", a['href'])
+                    link = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardArticle.do?nttId={ntt_id}&bbsId=BBSMSTR_1036&mn=NKFS_04_02_01"
                     clean_text = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
                     if ntt_id not in posts or len(clean_text) > len(posts[ntt_id]['title']):
                         posts[ntt_id] = {'link': link, 'title': clean_text}
@@ -209,7 +216,15 @@ def fetch_data():
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
-                    link = urljoin("https://www.seoul.go.kr/news/", a_tag.get('href', ''))
+                    raw_href = a_tag.get('href', '')
+                    
+                    ntt_m = re.search(r'nttNo=(\d+)|(\d{5,})', raw_href)
+                    if ntt_m:
+                        ntt_no = ntt_m.group(1) or ntt_m.group(2)
+                        link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_no}"
+                    else:
+                        link = urljoin("https://www.seoul.go.kr/news/", raw_href)
+
                     date = tds[-1].text.strip()
                     dept = tds[-2].get_text(separator=' ', strip=True)
                     all_data.append({"기관": "서울특별시", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
@@ -240,7 +255,6 @@ if not df.empty:
         
         st.write(f"총 **{len(filtered_df)}**건 표시 중")
         
-        # 기관/담당부서/날짜 열 너비 고정 및 줄바꿈 방지
         table_html = "<table class='custom-table'><thead><tr>"
         table_html += "<th style='width: 120px;'>기관</th>"
         table_html += "<th style='width: 160px;'>담당부서</th>"
