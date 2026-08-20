@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from urllib.parse import urljoin
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
@@ -105,16 +106,32 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+# 국토부 상세페이지 병렬 추출 함수 (원래 검증된 로직 동일 적용)
+def fetch_molit_dept_parallel(item):
+    try:
+        d_resp = requests.get(item['링크'], headers=HEADERS, timeout=4)
+        d_resp.encoding = 'utf-8'
+        d_soup = BeautifulSoup(d_resp.text, 'html.parser')
+        for f in d_soup.find_all('a'):
+            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
+            if m:
+                item['담당부서'] = m.group(1)
+                break
+    except: pass
+    return item
+
 @st.cache_data(ttl=1800)
 def fetch_data():
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     all_data = []
 
-    # 1. 국토교통부 (초기 성공 100% 단순 원복 코드)
+    # 1. 국토교통부
+    molit_items = []
     try:
         for page in range(1, 3):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -124,25 +141,19 @@ def fetch_data():
                     title = a_tag.text.strip()
                     link = "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']
                     date = tds[3].text.strip()
-                    dept = "국토교통부"
-                    try:
-                        d_resp = requests.get(link, headers=headers, timeout=5)
-                        d_resp.encoding = 'utf-8'
-                        d_soup = BeautifulSoup(d_resp.text, 'html.parser')
-                        for f in d_soup.find_all('a'):
-                            m = re.search(r'\(([가-힣]+(과|팀|단|실))\)', f.text)
-                            if m:
-                                dept = m.group(1)
-                                break
-                    except: pass
-                    all_data.append({"기관": "국토교통부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
+                    molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
+        
+        # 병렬 처리로 8개씩 동시 수집 (정확도 유지 + 속도 최적화)
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            molit_items = list(executor.map(fetch_molit_dept_parallel, molit_items))
+        all_data.extend(molit_items)
     except: pass
 
     # 2. 기후에너지환경부
     try:
         for page in range(1, 3):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -160,7 +171,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             posts = {}
@@ -196,7 +207,7 @@ def fetch_data():
     try:
         for page in range(1, 3):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
-            resp = requests.get(url, headers=headers, timeout=10)
+            resp = requests.get(url, headers=HEADERS, timeout=5)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
