@@ -206,17 +206,12 @@ def fetch_forest():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_seoul():
     items = []
-    seen_links = set()  # 🔥 중복 게시글 차단용 세트
-    url = "https://www.seoul.go.kr/news/news_report.do"
-    
+    seen_links = set()
     try:
         for page in range(1, 6):
-            # 🔥 서울시 게시판은 POST 폼 데이터 형태로 pageIndex를 넘겨야만 실제 페이지가 이동함
-            payload = {
-                "bbsNo": "158",
-                "pageIndex": str(page)
-            }
-            resp = requests.post(url, data=payload, headers=HEADERS, timeout=6, verify=False)
+            # 🔥 핵심 교정: 서울시 공식 페이지 파라미터는 pageIndex가 아닌 curPage 입니다!
+            url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -233,7 +228,6 @@ def fetch_seoul():
                     else:
                         link = urljoin("https://www.seoul.go.kr/news/", raw_href)
                     
-                    # 🔥 중복 링크 방지
                     if link in seen_links:
                         continue
                     seen_links.add(link)
