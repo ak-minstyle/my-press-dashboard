@@ -111,7 +111,7 @@ st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/기후에너지환경노동위 발의 법안 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-# 🔥 유저분이 발급받으신 국회 공식 인증키 고정!
+# 🔥 인증키 고정 완료
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
 def fetch_molit_dept_parallel(item):
@@ -130,15 +130,14 @@ def fetch_molit_dept_parallel(item):
 @st.cache_data(ttl=1800)
 def fetch_assembly_bills():
     bills = []
-    # 열린국회정보포털 "국회의원 발의법률안" 엔드포인트
     url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
     
     params = {
         "KEY": ASSEMBLY_API_KEY,
         "Type": "json",
         "pIndex": 1,
-        "pSize": 600,  # 최신 600건 넉넉히 호출
-        "AGE": "22"    # 22대 국회
+        "pSize": 600,
+        "AGE": "22"
     }
     
     try:
@@ -156,19 +155,16 @@ def fetch_assembly_bills():
                 
                 if not bill_id: continue
                 
-                # API에서 주는 BILL_ID(PRC_...)로 정확하게 상세페이지 직행 링크 조립
                 link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
                 
                 is_kokto = False
                 is_hwan = False
 
-                # 1. 소관위 이름으로 확실히 분류
                 if "국토" in comm:
                     is_kokto = True
                 elif any(kw in comm for kw in ["환경", "노동", "기후"]):
                     is_hwan = True
                 
-                # 2. 상임위 배정 전 접수단계 법안을 제목 키워드로 선제 분류
                 if not comm:
                     if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통", "물류"]):
                         is_kokto = True
@@ -188,10 +184,10 @@ def fetch_assembly_bills():
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부
+    # 1. 국토교통부 (1~3페이지 수집)
     molit_items = []
     try:
-        for page in range(1, 3):
+        for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
@@ -210,9 +206,9 @@ def fetch_data():
         all_data.extend(molit_items)
     except: pass
 
-    # 2. 기후에너지환경부
+    # 2. 기후에너지환경부 (1~3페이지 수집)
     try:
-        for page in range(1, 3):
+        for page in range(1, 4):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
@@ -228,9 +224,9 @@ def fetch_data():
                     all_data.append({"기관": "기후에너지환경부", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
 
-    # 3. 산림청
+    # 3. 산림청 (1~3페이지 수집)
     try:
-        for page in range(1, 3):
+        for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
@@ -257,9 +253,9 @@ def fetch_data():
             all_data.extend(posts.values())
     except: pass
 
-    # 4. 서울특별시
+    # 4. 서울특별시 (🔥 데이터가 많은 서울시는 특별히 1~5페이지 집중 수집)
     try:
-        for page in range(1, 3):
+        for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
@@ -286,7 +282,7 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("보도자료 및 국회 공식 API 데이터를 수집 중입니다..."):
+with st.spinner("보도자료(3~5페이지) 및 국회 법안을 심층 수집 중입니다..."):
     df_press = fetch_data()
     df_bills = pd.DataFrame(fetch_assembly_bills())
 
@@ -318,7 +314,6 @@ if not df_total.empty:
             table_html += f"<td class='nowrap-col'><b>{r['기관']}</b></td>"
             table_html += f"<td class='nowrap-col'>{r['담당부서']}</td>"
             table_html += f"<td class='nowrap-col'>{r['날짜']}</td>"
-            # 🔥 대문 튕김 방지를 위해 rel='noreferrer noopener' 적용 유지!
             table_html += f"<td><a href='{r['링크']}' target='_blank' rel='noreferrer noopener' class='dash-link'>{r['제목']}</a></td>"
             table_html += f"</tr>"
             
