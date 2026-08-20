@@ -106,7 +106,7 @@ st.markdown("""
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 
 def fetch_molit_dept(item):
     try:
@@ -114,19 +114,35 @@ def fetch_molit_dept(item):
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # 초기에 성공했던 파싱 로직 복원: 첨부파일 <a> 태그 텍스트에서 (OO과) 탐색
+        # 1. 첨부파일 영역/링크만 집중 수집
+        file_texts = []
         for a in soup.find_all('a'):
-            full_txt = a.get_text() + " " + a.get('title', '')
-            m = re.search(r'\(([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))\)', full_txt)
-            if m:
-                item['담당부서'] = m.group(1)
+            href = a.get('href', '')
+            title = a.get('title', '')
+            text = a.get_text()
+            full_str = f"{href} {title} {text}"
+            
+            # 파일 다운로드 관련 링크 또는 파일 확장자가 들어있는 경우
+            if any(ext in full_str.lower() for ext in ['.hwp', '.hwpx', '.pdf', '.doc', '.xls', 'file', 'download', 'down']):
+                file_texts.append(f"{title} {text}")
+        
+        combined_file_str = " ".join(file_texts)
+        
+        # 괄호 속 부서명 정규식 추출 (예: (주택정책과), (건축정책과))
+        exclude_words = {'국토교통부', '보도자료', '참고자료', '붙임', '수정본', '최종', '개정안'}
+        matches = re.findall(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', combined_file_str)
+        
+        for m in matches:
+            if m not in exclude_words:
+                item['담당부서'] = m
                 return item
-                
-        # 예비 파싱: 본문 전체에서 '담당부서 : OO과' 탐색
-        m_page = re.search(r'담당부서\s*[:]?\s*([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))', soup.get_text())
-        if m_page:
-            item['담당부서'] = m_page.group(1)
-            return item
+
+        # 2. 예비: 첨부파일 텍스트에서 안 나올 경우 본문 전체에서 파일명 검색
+        all_matches = re.findall(r'[\(\[]([가-힣]{2,10}(?:과|팀|단|실|센터|부|관))[\)\]]', soup.get_text())
+        for m in all_matches:
+            if m not in exclude_words:
+                item['담당부서'] = m
+                return item
     except: pass
     return item
 
@@ -148,12 +164,11 @@ def fetch_data():
                 if a_tag and len(tds) >= 4:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
-                    # 원래 검증된 urljoin 방식으로 주소 복원 (파라미터 유실 방지)
                     link = urljoin("https://www.molit.go.kr/USR/NEWS/m_71/", raw_href.replace('&amp;', '&'))
                     date = tds[3].text.strip()
                     molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=5) as executor:
             molit_items = list(executor.map(fetch_molit_dept, molit_items))
         all_data.extend(molit_items)
     except: pass
