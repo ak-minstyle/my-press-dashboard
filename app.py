@@ -127,7 +127,7 @@ def fetch_assembly_bills():
     likms_headers = HEADERS.copy()
     likms_headers["Referer"] = "https://likms.assembly.go.kr/bill/main.do"
     
-    # 국회 의안정보시스템(likms) 라이브 POST 조회
+    # 국회 의안정보시스템(likms) 라이브 POST 수집 (API Key 미필요)
     committees = [
         ("📜 국토교통위원회", "국토교통위원회"),
         ("📜 환경노동위원회", "환경노동위원회")
@@ -143,7 +143,7 @@ def fetch_assembly_bills():
                 "pIndex": "1",
                 "age": "22"
             }
-            resp = requests.post(url, data=payload, headers=likms_headers, timeout=8)
+            resp = requests.post(url, data=payload, headers=likms_headers, timeout=6)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -173,10 +173,10 @@ def fetch_assembly_bills():
                     })
         except: pass
 
-    # 예비 로직: likms 메인 페이지 최근 접수의안 라이브 파싱
+    # 예비 로직: likms 메인접수 안건 실시간 보완 수집
     if not bills:
         try:
-            resp = requests.get("https://likms.assembly.go.kr/bill/main.do", headers=likms_headers, timeout=8)
+            resp = requests.get("https://likms.assembly.go.kr/bill/main.do", headers=likms_headers, timeout=6)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for a in soup.find_all('a', href=re.compile(r'billDetail\.do')):
@@ -198,7 +198,7 @@ def fetch_assembly_bills():
 def fetch_data():
     all_data = []
 
-    # 1. 국토교통부 (기존 검증 로직 유지)
+    # 1. 국토교통부 (원본 동작 방식 100% 동일 유지)
     molit_items = []
     try:
         for page in range(1, 3):
@@ -302,15 +302,14 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("보도자료 및 국회 의안정보 시스템 데이터를 가져오는 중입니다..."):
+with st.spinner("보도자료 및 국회 의안정보 수집 중입니다..."):
     df_press = fetch_data()
-    bills_list = fetch_assembly_bills()
-    df_bills = pd.DataFrame(bills_list)
+    df_bills = pd.DataFrame(fetch_assembly_bills())
 
 df_total = pd.concat([df_press, df_bills], ignore_index=True) if not df_bills.empty else df_press
 
 if not df_total.empty:
-    search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
+    search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 발의자)", "")
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
