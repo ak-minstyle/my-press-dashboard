@@ -9,20 +9,115 @@ import re
 # 웹 페이지 기본 설정
 st.set_page_config(page_title="통합 보도자료 대시보드", page_icon="📰", layout="wide")
 
-# 다크모드/라이트모드 무관 강제 고대비 스타일링
+# 다크모드 방어 및 표 줄바꿈(white-space: nowrap) 방지 스타일링
 st.markdown("""
     <style>
-        .stApp { background-color: #ffffff !important; color: #0f172a !important; }
-        div[data-baseweb="tab-list"] button { font-weight: bold !important; font-size: 15px !important; }
-        a { color: #0f172a !important; font-weight: bold; text-decoration: none; }
-        a:hover { color: #2563eb !important; text-decoration: underline; }
+        /* 1. 메인 배경 및 전체 기본 글자색 고정 */
+        html, body, [data-testid="stAppViewContainer"], .stApp, .main, .block-container {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+        }
+        
+        /* 2. 일반 텍스트 요소 글자색 고정 */
+        h1, h2, h3, h4, h5, h6, p, span, label, div {
+            color: #0f172a !important;
+        }
+
+        /* 3. 탭(Tabs) 영역 고대비 스타일링 */
+        div[data-baseweb="tab-list"] {
+            background-color: #ffffff !important;
+            border-bottom: 2px solid #cbd5e1 !important;
+        }
+        
+        div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
+            background-color: #f1f5f9 !important;
+            border: 1px solid #cbd5e1 !important;
+            border-bottom: none !important;
+            border-radius: 6px 6px 0 0 !important;
+            padding: 10px 20px !important;
+            margin-right: 4px !important;
+        }
+        div[data-baseweb="tab-list"] button[data-baseweb="tab"] * {
+            color: #0f172a !important;
+            font-weight: bold !important;
+            font-size: 15px !important;
+        }
+
+        div[data-baseweb="tab-list"] button[aria-selected="true"] {
+            background-color: #2563eb !important;
+            border-color: #2563eb !important;
+        }
+        div[data-baseweb="tab-list"] button[aria-selected="true"] * {
+            color: #ffffff !important;
+            font-weight: bold !important;
+        }
+
+        /* 4. 검색창 및 버튼 라이트 모드 고정 */
+        div[data-baseweb="input"] {
+            background-color: #f8fafc !important;
+            border: 1px solid #cbd5e1 !important;
+            border-radius: 6px !important;
+        }
+        div[data-baseweb="input"] input {
+            color: #0f172a !important;
+            background-color: #f8fafc !important;
+        }
+        .stButton > button {
+            background-color: #f1f5f9 !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            font-weight: bold !important;
+        }
+        .stButton > button:hover {
+            background-color: #2563eb !important;
+            color: #ffffff !important;
+        }
+
+        /* 5. 보도자료 표(Table) 스타일 - 줄바꿈 방지(nowrap) 핵심 설정 */
+        .custom-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background-color: #ffffff !important;
+        }
+        .custom-table th {
+            background-color: #f1f5f9 !important;
+            color: #0f172a !important;
+            font-weight: bold;
+            padding: 12px;
+            border-bottom: 2px solid #cbd5e1;
+            text-align: left;
+            white-space: nowrap !important;
+        }
+        .custom-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155 !important;
+            text-align: left;
+        }
+        /* 제목 제외한 나머지는 강제 한 줄 고정 */
+        .nowrap-col {
+            white-space: nowrap !important;
+        }
+        .custom-table tr:hover {
+            background-color: #f8fafc !important;
+        }
+        .dash-link {
+            color: #1d4ed8 !important;
+            font-weight: bold !important;
+            text-decoration: none !important;
+            word-break: keep-all;
+        }
+        .dash-link:hover {
+            text-decoration: underline !important;
+            color: #1e40af !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 st.title("📰 정부·지자체 통합 보도자료 대시보드")
 st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별시 보도자료 모니터링")
 
-# 30분 동안 수집 결과를 저장해두어 로딩 속도 최적화
 @st.cache_data(ttl=1800)
 def fetch_data():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -138,21 +233,36 @@ if not df.empty:
 
     tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시"])
 
-    def render_table(filtered_df):
+    def render_custom_table(filtered_df):
         if filtered_df.empty:
             st.info("검색 조건에 해당되는 보도자료가 없습니다.")
             return
         
-        display_df = filtered_df.copy()
-        display_df['제목'] = display_df.apply(lambda r: f"[{r['제목']}]({r['링크']})", axis=1)
-        display_df = display_df[['기관', '담당부서', '날짜', '제목']]
-        st.write(f"총 **{len(display_df)}**건 표시 중")
-        st.markdown(display_df.to_markdown(index=False), unsafe_allow_html=True)
+        st.write(f"총 **{len(filtered_df)}**건 표시 중")
+        
+        # 기관/담당부서/날짜 열 너비 고정 및 줄바꿈 방지
+        table_html = "<table class='custom-table'><thead><tr>"
+        table_html += "<th style='width: 120px;'>기관</th>"
+        table_html += "<th style='width: 160px;'>담당부서</th>"
+        table_html += "<th style='width: 110px;'>날짜</th>"
+        table_html += "<th>보도자료 제목</th>"
+        table_html += "</tr></thead><tbody>"
+        
+        for _, r in filtered_df.iterrows():
+            table_html += f"<tr>"
+            table_html += f"<td class='nowrap-col'><b>{r['기관']}</b></td>"
+            table_html += f"<td class='nowrap-col'>{r['담당부서']}</td>"
+            table_html += f"<td class='nowrap-col'>{r['날짜']}</td>"
+            table_html += f"<td><a href='{r['링크']}' target='_blank' class='dash-link'>{r['제목']}</a></td>"
+            table_html += f"</tr>"
+            
+        table_html += "</tbody></table>"
+        st.markdown(table_html, unsafe_allow_html=True)
 
-    with tabs[0]: render_table(df)
-    with tabs[1]: render_table(df[df['기관'] == '국토교통부'])
-    with tabs[2]: render_table(df[df['기관'] == '기후에너지환경부'])
-    with tabs[3]: render_table(df[df['기관'] == '산림청'])
-    with tabs[4]: render_table(df[df['기관'] == '서울특별시'])
+    with tabs[0]: render_custom_table(df)
+    with tabs[1]: render_custom_table(df[df['기관'] == '국토교통부'])
+    with tabs[2]: render_custom_table(df[df['기관'] == '기후에너지환경부'])
+    with tabs[3]: render_custom_table(df[df['기관'] == '산림청'])
+    with tabs[4]: render_custom_table(df[df['기관'] == '서울특별시'])
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
