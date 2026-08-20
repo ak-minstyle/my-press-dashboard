@@ -108,10 +108,9 @@ st.caption("국토교통부, 기후에너지환경부, 산림청, 서울특별�
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-# 병렬 처리용 서브 함수들
 def fetch_molit_dept(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=3)
+        resp = requests.get(item['link'], headers=HEADERS, timeout=5)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         for f in soup.find_all('a'):
@@ -124,9 +123,14 @@ def fetch_molit_dept(item):
 
 def fetch_forest_date(item):
     try:
-        resp = requests.get(item['link'], headers=HEADERS, timeout=3)
+        # 산림청 타임아웃을 7초로 충분히 설정
+        resp = requests.get(item['link'], headers=HEADERS, timeout=7)
         resp.encoding = 'utf-8'
-        dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', BeautifulSoup(resp.text, 'html.parser').get_text())
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        text = soup.get_text()
+        
+        # 202x-xx-xx 형태 날짜 정규식 매칭
+        dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', text)
         if dm:
             item['날짜'] = dm.group(1).replace('.', '-').replace('/', '-')
     except: pass
@@ -155,7 +159,6 @@ def fetch_data():
                     date = tds[3].text.strip()
                     molit_items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": date, "제목": title, "링크": link})
         
-        # 멀티스레딩으로 상세페이지 동시에 10개씩 접속
         with ThreadPoolExecutor(max_workers=10) as executor:
             molit_items = list(executor.map(fetch_molit_dept, molit_items))
         all_data.extend(molit_items)
@@ -189,10 +192,12 @@ def fetch_data():
             soup = BeautifulSoup(resp.text, 'html.parser')
             posts = {}
             for a in soup.find_all('a', href=re.compile(r'nttId=')):
-                m = re.search(r'nttId=(\d+)', a.get('href', ''))
+                raw_href = a.get('href', '')
+                m = re.search(r'nttId=(\d+)', raw_href)
                 if m:
                     ntt_id = m.group(1)
-                    link = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardArticle.do?nttId={ntt_id}&bbsId=BBSMSTR_1036&mn=NKFS_04_02_01"
+                    # 원래 검증된 urljoin 방식으로 복원
+                    link = urljoin("https://www.forest.go.kr", raw_href)
                     clean_text = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
                     if ntt_id not in posts or len(clean_text) > len(posts[ntt_id]['title']):
                         posts[ntt_id] = {'link': link, 'title': clean_text}
@@ -200,8 +205,8 @@ def fetch_data():
                 if len(info['title']) >= 5:
                     forest_items.append({"기관": "산림청", "담당부서": "산림청", "날짜": "확인 불가", "제목": info['title'], "링크": info['link']})
         
-        # 멀티스레딩으로 날짜 추출 동시에 실행
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        # 병렬 스레드 수를 5로 조정하여 산림청 서버 부담 방지
+        with ThreadPoolExecutor(max_workers=5) as executor:
             forest_items = list(executor.map(fetch_forest_date, forest_items))
         all_data.extend(forest_items)
     except: pass
@@ -234,7 +239,7 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-with st.spinner("실시간으로 각 부처 데이터를 빠르게 가져오는 중입니다..."):
+with st.spinner("실시간으로 각 부처 데이터를 가져오는 중입니다..."):
     df = fetch_data()
 
 if not df.empty:
