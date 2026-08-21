@@ -5,7 +5,7 @@ import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import urllib3
-import holidays  # 한국 공휴일 자동 감지 라이브러리
+import holidays
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -13,6 +13,42 @@ ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID_STR = os.environ.get("TELEGRAM_CHAT_ID", "")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+SUB_FILE = "subscribers.txt"
+
+def get_subscribers():
+    ids = set()
+    # 1. 기존 파일에서 수신자 읽기
+    if os.path.exists(SUB_FILE):
+        with open(SUB_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    ids.add(line.strip())
+                    
+    # 2. GitHub Secrets 환경변수 읽기
+    if TELEGRAM_CHAT_ID_STR:
+        for cid in TELEGRAM_CHAT_ID_STR.split(","):
+            if cid.strip():
+                ids.add(cid.strip())
+
+    # 3. 텔레그램 봇에 들어와 [시작]을 누른 신규 사용자 자동 감지
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+        resp = requests.get(url, timeout=10).json()
+        if resp.get("ok"):
+            for item in resp.get("result", []):
+                if "message" in item and "chat" in item["message"]:
+                    ids.add(str(item["message"]["chat"]["id"]))
+                elif "my_chat_member" in item and "chat" in item["my_chat_member"]:
+                    ids.add(str(item["my_chat_member"]["chat"]["id"]))
+    except Exception as e:
+        print(f"신규 구독자 감지 실패: {e}")
+
+    # 4. 최신 수신자 목록 파일에 저장
+    with open(SUB_FILE, "w", encoding="utf-8") as f:
+        for cid in sorted(ids):
+            f.write(f"{cid}\n")
+            
+    return list(ids)
 
 def send_telegram_msg(text, target_chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -32,7 +68,6 @@ def main():
     today_str = kst_now.strftime("%Y-%m-%d")
     yesterday_str = (kst_now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     
-    # 🔥 주말(토=5, 일=6) 및 한국 법정 공휴일 체크
     kr_holidays = holidays.KR()
     if kst_now.weekday() >= 5 or kst_now in kr_holidays:
         print(f"오늘은 주말 또는 공휴일({today_str})입니다. 알림 발송을 건너뜁니다.")
@@ -41,7 +76,6 @@ def main():
     target_dates = [today_str, yesterday_str]
     collected_items = []
 
-    # 1. 국회 발의 법안 수집 (국토위, 환노위, 정무위)
     try:
         url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
         params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 100, "AGE": "22"}
@@ -68,7 +102,6 @@ def main():
     except Exception as e:
         print(f"국회 법안 수집 에러: {e}")
 
-    # 2. 하위법령 입법예고 수집
     try:
         url = "https://opinion.lawmaking.go.kr/gns/elm/stty/lst"
         resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
@@ -91,14 +124,13 @@ def main():
     except Exception as e:
         print(f"입법예고 수집 에러: {e}")
 
-    # 메시지 조립 및 텔레그램 전송
     if collected_items:
         msg = f"☀️ <b>[{today_str} 출근 모닝 브리핑]</b>\n새로 업데이트된 주요 안건 목록입니다. ({len(collected_items)}건)\n\n"
         msg += "\n\n".join(collected_items)
     else:
         msg = f"☀️ <b>[{today_str} 출근 모닝 브리핑]</b>\n신규 업데이트된 주요 안건이 없습니다."
 
-    chat_ids = [cid.strip() for cid in TELEGRAM_CHAT_ID_STR.split(",") if cid.strip()]
+    chat_ids = get_subscribers()
     for chat_id in chat_ids:
         send_telegram_msg(msg, chat_id)
 
