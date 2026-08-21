@@ -2,9 +2,11 @@ name: Morning Telegram Notifier (08:30 KST)
 
 on:
   schedule:
-    # 매일 UTC 23:30 (KST 08:30) 실행 후 파이썬 코드에서 휴일 필터링
     - cron: '30 23 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   notify:
@@ -27,3 +29,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python telegram_notifier.py
+
+      - name: Save Auto-registered Subscribers
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add subscribers.txt
+          git commit -m "auto: update subscriber list" || exit 0
+          git push
