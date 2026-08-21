@@ -173,13 +173,16 @@ def fetch_mcee():
     except: pass
     return items
 
+# 🌲 산림청 원본 로직 + 타임아웃 12초 세션 적용
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=12, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -397,7 +400,13 @@ sub_leg_data = fetch_sub_legislation()
 progress_bar.progress(60, text="🏢 국토부·기후부·산림청·서울시 수집 중...")
 molit_data = fetch_molit()
 mcee_data = fetch_mcee()
+
+# 🔥 산림청 수집 실패 시 빈 캐시 자동 삭제 후 즉시 재시도
 forest_data = fetch_forest()
+if not forest_data:
+    fetch_forest.clear()
+    forest_data = fetch_forest()
+
 seoul_data = fetch_seoul()
 
 progress_bar.progress(85, text="🏛️ 공정위·행안부·국방부 보도자료 수집 중...")
@@ -417,7 +426,7 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    # 📌 요청 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
+    # 📌 요청 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
