@@ -173,7 +173,7 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 수집기 (사용자 원본 로직 100% 유지)
+# 🌲 산림청 수집기 (전달받은 사용자 원본 로직 유지)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -296,54 +296,45 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 보도자료 수집기 (신규 게시판 구조 대응)
+# 🪖 국방부 신규 URL(subview.do / pageIndex 기준) 파서
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
     try:
         for page in range(1, 4):
-            url = f"https://www.mnd.go.kr/mnd/167/subview.do?page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
+            url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=8, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # 1. tr 기반 파싱
-            for row in soup.find_all('tr'):
-                a_tag = row.find('a')
-                tds = row.find_all('td')
-                if a_tag and len(tds) >= 2:
-                    raw_title = a_tag.text.strip()
-                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', raw_title).strip()
-                    if not clean_title or len(clean_title) < 2: continue
-                    link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
-                    
-                    dept = "국방부"
-                    if len(tds) >= 4:
-                        d_text = tds[-3].get_text(separator=' ', strip=True)
-                        if d_text and not re.search(r'^\d{4}[-.\/]', d_text):
-                            dept = d_text
-                            
-                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
-                    date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-            
-            # 2. 파싱 보완: enc= 또는 subview.do 링크 직접 탐색
-            if not items:
-                posts = {}
-                for a in soup.find_all('a', href=re.compile(r'enc=|subview.do')):
-                    raw_href = a.get('href', '')
-                    if '167' not in raw_href and 'enc=' not in raw_href: continue
-                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
-                    if not clean_title or len(clean_title) < 2: continue
-                    link = urljoin("https://www.mnd.go.kr", raw_href)
-                    parent_box = a.find_parent(['tr', 'li', 'td', 'div'])
-                    box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else clean_title
-                    dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', box_text)
-                    date = dm.group(1).replace('.', '-') if dm else "날짜 미표기"
-                    if raw_href not in posts:
-                        posts[raw_href] = {"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link}
-                items.extend(posts.values())
-    except Exception: pass
+            posts = {}
+            for a in soup.find_all('a', href=True):
+                raw_href = a.get('href', '')
+                if 'enc=' not in raw_href and 'artclView' not in raw_href and 'subview.do' not in raw_href:
+                    continue
+                
+                clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
+                clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
+                if not clean_title or len(clean_title) < 2 or clean_title == "자세히보기":
+                    continue
+                
+                link = urljoin("https://www.mnd.go.kr", raw_href)
+                parent_box = a.find_parent(['li', 'tr', 'td', 'div'])
+                box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else clean_title
+                
+                dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', box_text)
+                date = dm.group(1).replace('.', '-').replace('/', '-') if dm else "날짜 미표기"
+                
+                if raw_href not in posts or len(clean_title) > len(posts[raw_href]['제목']):
+                    posts[raw_href] = {
+                        "기관": "국방부",
+                        "담당부서": "국방부",
+                        "날짜": date,
+                        "제목": clean_title,
+                        "링크": link
+                    }
+            items.extend(posts.values())
+    except: pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
