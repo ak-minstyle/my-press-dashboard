@@ -11,8 +11,8 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 페이지 탭 제목도 맞춤 변경
-st.set_page_config(page_title="국회 법안 입법·행정예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
+# 페이지 탭 제목 변경
+st.set_page_config(page_title="국회 법안·입법예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
     <style>
@@ -139,8 +139,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 변경된 타이틀 적용 (입법예고 국회 법안 -> 정부 지자체 보도자료)
-st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>⚖️ 입법예고·📜 국회 법안 /<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
+# 📌 변경된 타이틀 및 줄바꿈 적용
+st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -433,7 +433,8 @@ def fetch_assembly_bills():
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
-    if st.button("🔄 최신 데이터 강제 갱신"):
+    # 📌 버튼 이름 변경 반영
+    if st.button("🔄 최신 데이터 새로고침"):
         st.cache_data.clear()
         st.rerun()
 
@@ -500,7 +501,6 @@ if not df_total.empty:
         else:
             col1_title, col2_title, col4_title = "기관명", "담당부서", "보도자료 제목"
         
-        # 💡 [모바일 핵심] 표 바깥에 div class='table-responsive' 를 감싸 가로 스와이프를 지원합니다.
         table_html = "<div class='table-responsive'><table class='custom-table'><thead><tr>"
         table_html += f"<th style='width: 150px;'>{col1_title}</th>"
         table_html += f"<th style='width: 160px;'>{col2_title}</th>"
