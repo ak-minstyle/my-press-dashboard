@@ -80,7 +80,7 @@ st.markdown("""
             color: #ffffff !important;
         }
         
-        /* 표 가로 스크롤 래퍼 (모바일 핵심) */
+        /* 표 가로 스크롤 래퍼 */
         .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table {
             width: 100%;
@@ -147,7 +147,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 타이틀 서식
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -389,14 +388,14 @@ def fetch_mnd():
             continue
     return items
 
-# 💡 입법예고 & 행정예고 분리 파싱
+# 💡 입법예고 & 행정예고 독립적 파싱 수집기
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    # 1. ⚖️ 입법예고 탭에 파싱될 사이트들 (우측 6번째 소관부처, 우측 4번째 날짜/접수기간)
+    # 1. ⚖️ 입법예고 (우측 기준 -6: 소관부처, -4: 날짜/접수기간)
     leg_targets = [
         "https://opinion.lawmaking.go.kr/gns/elm/stty/lst",
         "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
@@ -419,7 +418,8 @@ def fetch_sub_legislation():
                     items.append({"기관": "⚖️ 입법예고", "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
         except: pass
 
-    # 2. ⚖️ 행정예고 탭에 파싱될 사이트 (우측 3번째 소관부처, 우측 2번째 날짜)
+    # 2. ⚖️ 행정예고 (https://opinion.lawmaking.go.kr/gcom/admpp)
+    # 📌 지시 반영: 우측 3번째(tds[-3]) = 소관부처, 우측 2번째(tds[-2]) = 날짜
     adm_url = "https://opinion.lawmaking.go.kr/gcom/admpp"
     try:
         resp = session.get(adm_url, timeout=8, verify=False)
@@ -430,7 +430,7 @@ def fetch_sub_legislation():
             a_tag = row.find('a')
             tds = row.find_all('td')
             
-            if a_tag and len(tds) >= 3:
+            if a_tag and len(tds) >= 4:
                 title = a_tag.text.strip()
                 link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
                 dept = tds[-3].get_text(separator=' ', strip=True)
