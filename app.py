@@ -173,7 +173,7 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 수집기 (전달받은 원본 코드 100% 고정)
+# 🌲 산림청 수집기 (유저 원본 고정 코드)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -296,7 +296,7 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국토부(fetch_molit) 파싱 구조를 적용한 국방부 보도자료 수집기
+# 🪖 국방부 담당부서 동적 파싱 보완
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
@@ -317,7 +317,16 @@ def fetch_mnd():
                     link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    items.append({"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link})
+                    
+                    # 담당부서 탐색 (링크가 없고, 날짜/숫자가 아닌 셀 탐색)
+                    dept = "국방부"
+                    for td in tds:
+                        t_text = td.get_text(separator=' ', strip=True)
+                        if t_text and not td.find('a') and not re.search(r'20\d{2}', t_text) and not re.search(r'^\d+$', t_text) and len(t_text) < 25:
+                            dept = t_text
+                            break
+
+                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
     except: pass
     return items
 
@@ -422,11 +431,14 @@ all_data = bills_data + sub_leg_data + molit_data + mcee_data + mois_data + mnd_
 df_total = pd.DataFrame(all_data)
 
 if not df_total.empty:
+    # 🕒 전체 데이터 날짜 기준 최신순(내림차순) 정렬
+    df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
+    df_total = df_total.sort_values(by='sort_date', ascending=False).drop(columns=['sort_date'])
+
     search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    # 📌 지정 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
