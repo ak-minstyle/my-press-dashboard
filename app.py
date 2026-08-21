@@ -296,6 +296,7 @@ def fetch_mois():
     except: pass
     return items
 
+# 🪖 국방부 파서 (제목 앵커 지정 및 부서 파싱 정교화)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
@@ -306,9 +307,16 @@ def fetch_mnd():
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tr'):
-                a_tag = row.find('a')
                 tds = row.find_all('td')
-                if a_tag and len(tds) >= 3:
+                if len(tds) >= 3:
+                    a_tag = None
+                    for td in tds:
+                        a = td.find('a')
+                        if a and len(a.text.strip()) > 2:
+                            a_tag = a
+                            break
+                    if not a_tag: continue
+                    
                     title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     if not clean_title or clean_title == "자세히보기":
@@ -318,11 +326,14 @@ def fetch_mnd():
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
                     dept = "국방부"
-                    for td in tds:
-                        t_text = td.get_text(separator=' ', strip=True)
-                        if t_text and not td.find('a') and not re.search(r'20\d{2}', t_text) and not re.search(r'^\d+$', t_text) and len(t_text) < 25:
-                            dept = t_text
-                            break
+                    if len(tds) >= 4:
+                        d_cand = tds[2].get_text(strip=True)
+                        if d_cand and not re.search(r'20\d{2}', d_cand) and not d_cand.isdigit() and len(d_cand) < 20:
+                            dept = d_cand
+                        elif len(tds) >= 5:
+                            d_cand2 = tds[-3].get_text(strip=True)
+                            if d_cand2 and not re.search(r'20\d{2}', d_cand2) and not d_cand2.isdigit() and len(d_cand2) < 20:
+                                dept = d_cand2
 
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
     except: pass
@@ -429,13 +440,12 @@ all_data = bills_data + sub_leg_data + molit_data + mcee_data + mois_data + mnd_
 df_total = pd.DataFrame(all_data)
 
 if not df_total.empty:
-    # 🧹 [중복 제거] 기관과 제목 및 링크가 완전히 일치하는 중복 항목 삭제
-    df_total = df_total.drop_duplicates(subset=['기관', '제목'], keep='first')
-    df_total = df_total.drop_duplicates(subset=['링크'], keep='first')
+    # 🧹 [안전 중복 제거] 기관, 제목, 날짜가 모두 동일한 중복 항목만 제거
+    df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
 
-    # 🕒 전체 데이터 날짜 기준 최신순(내림차순) 정렬
+    # 🕒 전체 데이터 날짜 기준 최신순(내림차순) 정렬 (알 수 없는 날짜는 맨 아래)
     df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
-    df_total = df_total.sort_values(by='sort_date', ascending=False).drop(columns=['sort_date'])
+    df_total = df_total.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
 
     search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
@@ -448,7 +458,7 @@ if not df_total.empty:
         "국토교통부", "기후에너지환경부", "행정안전부", "국방부", "공정거래위원회", "산림청", "서울특별시"
     ])
 
-    # 🏷️ 탭 성격에 맞춰 칼럼명을 동적으로 변경하는 렌더링 함수
+    # 🏷️ 탭 성격에 따른 맞춤형 컬럼명 설정 함수
     def render_custom_table(filtered_df, tab_name="전체 보기"):
         if filtered_df.empty:
             st.info("해당 조건의 데이터가 없습니다.")
