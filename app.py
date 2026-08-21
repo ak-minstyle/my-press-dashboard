@@ -174,7 +174,7 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 수집기 (원본 유지)
+# 🌲 산림청 수집기 (유저 원본 고정 코드)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -297,27 +297,29 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 수집기 (복잡한 조건 모두 날린 가장 안전한 '초기 순회 파서')
+# 🪖 국방부 수집기 (가장 기초적인 순회 방식으로 백지 원상복구)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
-    try:
-        for page in range(1, 4):
+    # 에러가 나도 다음 페이지 수집을 계속하도록 for문 안쪽에 try 배치
+    for page in range(1, 4):
+        try:
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            # 접속 지연 문제 방지를 위해 타임아웃 15초 세팅
-            resp = requests.get(url, headers=HEADERS, timeout=15, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # tbody 유무나 td 개수에 구애받지 않고 모든 tr을 조사
+            # 조건 없이 무조건 모든 표의 행(tr)을 찾습니다.
             for row in soup.find_all('tr'):
-                a_tag = row.find('a')
-                
-                # a 태그가 있는 행만 안전하게 판별
-                if a_tag:
-                    title = a_tag.text.strip()
+                try:
+                    a_tag = row.find('a')
+                    if not a_tag:
+                        continue
+                        
+                    title = a_tag.get_text(strip=True)
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     
+                    # 빈 제목이거나 불필요한 텍스트일 경우 넘김
                     if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
                         continue
                         
@@ -327,20 +329,25 @@ def fetch_mnd():
                         
                     link = urljoin("https://www.mnd.go.kr", raw_href)
                     
-                    # 텍스트 전체에서 날짜 포맷 안정적 추출
+                    # 텍스트 전체에서 날짜(20XX.XX.XX 형식) 무조건 추출
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # td-etc 탐색은 오류 원인이었으므로 과감히 날리고 "국방부" 고정
+                    # 복잡한 담당부서 추출은 원천 차단하고 기본값 고정
+                    dept = "국방부"
+                    
                     items.append({
                         "기관": "국방부", 
-                        "담당부서": "국방부", 
+                        "담당부서": dept, 
                         "날짜": date, 
                         "제목": clean_title, 
                         "링크": link
                     })
-    except: 
-        pass
+                except Exception:
+                    continue  # 한 줄 오류나도 다음 줄 진행
+        except Exception:
+            continue  # 한 페이지 오류나도 다음 페이지 진행
+            
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
