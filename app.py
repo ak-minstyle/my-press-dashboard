@@ -296,7 +296,7 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 파서 (td-etc 클래스에서 담당부서 직접 추출)
+# 🪖 국방부 파서 (td-write 뒤에 오는 td-etc를 담당부서로 수집)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
@@ -318,8 +318,8 @@ def fetch_mnd():
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # td-etc 클래스 태그에서 담당부서 추출
-                    dept_tag = row.select_one('.td-etc')
+                    # td-write 다음에 위치한 td-etc 지정
+                    dept_tag = row.select_one('.td-write ~ .td-etc')
                     dept = dept_tag.get_text(separator=' ', strip=True) if dept_tag else "국방부"
                     if not dept:
                         dept = "국방부"
