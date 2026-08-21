@@ -34,7 +34,7 @@ st.markdown("""
             background-color: #ffffff !important;
             border-bottom: 2px solid #cbd5e1 !important;
             flex-wrap: nowrap;
-            overflow-x: auto; /* 모바일에서 탭 가로 스크롤 허용 */
+            overflow-x: auto; 
         }
         div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
             background-color: #f1f5f9 !important;
@@ -94,7 +94,7 @@ st.markdown("""
             width: 100%;
             border-collapse: collapse;
             background-color: #ffffff !important;
-            min-width: 600px; /* 모바일에서도 표가 너무 찌그러지지 않게 최소 너비 보장 */
+            min-width: 600px;
         }
         .custom-table th {
             background-color: #f1f5f9 !important;
@@ -163,7 +163,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 변경된 타이틀 및 줄바꿈 적용
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -405,17 +404,16 @@ def fetch_mnd():
             continue
     return items
 
-# 💡 하위법령 입법예고 + 행정규칙 행정예고 병합 수집 로직
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    # 두 개의 URL과 각각의 태그를 지정하여 순회
+    # 입법예고, 행정예고 URL과 각각의 탭 라벨 지정
     targets = [
-        ("https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "입법예고"),
-        ("https://opinion.lawmaking.go.kr/gcom/ogLmPp", "행정예고")
+        ("https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "⚖️ 입법예고"),
+        ("https://opinion.lawmaking.go.kr/gcom/ogLmPp", "⚖️ 행정예고")
     ]
     
     for url, tag in targets:
@@ -427,20 +425,19 @@ def fetch_sub_legislation():
             for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
-                if a_tag and len(tds) >= 4:
+                
+                # 좌측에서 6번째 칼럼까지 존재해야 하므로 조건 변경
+                if a_tag and len(tds) >= 6:
                     title = a_tag.text.strip()
-                    # 제목 앞에 태그를 붙여 직관적으로 알 수 있게 함
-                    display_title = f"[{tag}] {title}"
-                    
                     link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
-                    dept = tds[1].get_text(separator=' ', strip=True)
-                    date = tds[-1].get_text(separator=' ', strip=True)
                     
-                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', date)
-                    clean_date = date_match.group(1).replace('.', '-') if date_match else date
+                    # 4번째 칼럼(인덱스 3): 접수기간 -> '날짜'에 표기
+                    date_text = tds[3].get_text(separator=' ', strip=True)
                     
-                    # 기관명과 탭에 들어갈 이름을 '⚖️ 정부 입법·행정예고'로 통일
-                    items.append({"기관": "⚖️ 정부 입법·행정예고", "담당부서": dept, "날짜": clean_date, "제목": display_title, "링크": link})
+                    # 6번째 칼럼(인덱스 5): 소관부처 -> '담당부서'에 표기
+                    dept = tds[5].get_text(separator=' ', strip=True)
+                    
+                    items.append({"기관": tag, "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
         except: 
             pass
             
@@ -488,7 +485,6 @@ def fetch_assembly_bills():
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
-    # 📌 버튼 이름 새로고침으로 변경
     if st.button("🔄 최신 데이터 새로고침"):
         st.cache_data.clear()
         st.rerun()
@@ -536,7 +532,7 @@ if not df_total.empty:
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
-        "⚖️ 정부 입법·행정예고", 
+        "⚖️ 입법예고", "⚖️ 행정예고", 
         "국토교통부", "기후에너지환경부", "행정안전부", "국방부", "공정거래위원회", "산림청", "서울특별시"
     ])
 
@@ -550,7 +546,7 @@ if not df_total.empty:
         if "📜" in tab_name:
             col1_title, col2_title, col4_title = "상임위 구분", "대표발의자", "법안명"
         elif "⚖️" in tab_name:
-            col1_title, col2_title, col4_title = "구분", "소관부처", "입법·행정예고명"
+            col1_title, col2_title, col4_title = "구분", "소관부처", "예고명"
         elif tab_name == "전체 보기":
             col1_title, col2_title, col4_title = "기관 / 구분", "담당부서 / 발의자", "보도자료 제목 / 법안·입법예고명"
         else:
@@ -559,7 +555,7 @@ if not df_total.empty:
         table_html = "<div class='table-responsive'><table class='custom-table'><thead><tr>"
         table_html += f"<th style='width: 150px;'>{col1_title}</th>"
         table_html += f"<th style='width: 160px;'>{col2_title}</th>"
-        table_html += f"<th style='width: 110px;'>날짜</th>"
+        table_html += f"<th style='width: 180px;'>날짜(접수기간)</th>"
         table_html += f"<th>{col4_title}</th>"
         table_html += "</tr></thead><tbody>"
         
@@ -578,13 +574,14 @@ if not df_total.empty:
     with tabs[1]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'], "📜 국토교통위원회")
     with tabs[2]: render_custom_table(df_total[df_total['기관'] == '📜 기후에너지환경노동위원회'], "📜 기후에너지환경노동위원회")
     with tabs[3]: render_custom_table(df_total[df_total['기관'] == '📜 정무위원회'], "📜 정무위원회")
-    with tabs[4]: render_custom_table(df_total[df_total['기관'] == '⚖️ 정부 입법·행정예고'], "⚖️ 정부 입법·행정예고")
-    with tabs[5]: render_custom_table(df_total[df_total['기관'] == '국토교통부'], "국토교통부")
-    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'], "기후에너지환경부")
-    with tabs[7]: render_custom_table(df_total[df_total['기관'] == '행정안전부'], "행정안전부")
-    with tabs[8]: render_custom_table(df_total[df_total['기관'] == '국방부'], "국방부")
-    with tabs[9]: render_custom_table(df_total[df_total['기관'] == '공정거래위원회'], "공정거래위원회")
-    with tabs[10]: render_custom_table(df_total[df_total['기관'] == '산림청'], "산림청")
-    with tabs[11]: render_custom_table(df_total[df_total['기관'] == '서울특별시'], "서울특별시")
+    with tabs[4]: render_custom_table(df_total[df_total['기관'] == '⚖️ 입법예고'], "⚖️ 입법예고")
+    with tabs[5]: render_custom_table(df_total[df_total['기관'] == '⚖️ 행정예고'], "⚖️ 행정예고")
+    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '국토교통부'], "국토교통부")
+    with tabs[7]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'], "기후에너지환경부")
+    with tabs[8]: render_custom_table(df_total[df_total['기관'] == '행정안전부'], "행정안전부")
+    with tabs[9]: render_custom_table(df_total[df_total['기관'] == '국방부'], "국방부")
+    with tabs[10]: render_custom_table(df_total[df_total['기관'] == '공정거래위원회'], "공정거래위원회")
+    with tabs[11]: render_custom_table(df_total[df_total['기관'] == '산림청'], "산림청")
+    with tabs[12]: render_custom_table(df_total[df_total['기관'] == '서울특별시'], "서울특별시")
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
