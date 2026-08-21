@@ -111,7 +111,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 원본 타이틀 문구 유지 + 줄바꿈 & 가운데 정렬 적용
+# 📌 타이틀 줄바꿈 및 가운데 정렬 적용
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;'>📰 정부·지자체 보도자료 / ⚖️ 입법예고 &<br>📜 국회 법안 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -297,60 +297,29 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 수집기 (개별 행 안전 예외처리 + td-write 직후 td-etc 담당부서 추출)
+# 🪖 국방부 수집기 (검증된 표준 국토부 스타일 수집 방식 원상복구)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
-    mnd_headers = {
-        **HEADERS,
-        "Referer": "https://www.mnd.go.kr/mnd/167/subview.do"
-    }
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=mnd_headers, timeout=8, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            
             for row in soup.select('table tr'):
-                try:
-                    a_tag = row.find('a')
-                    tds = row.find_all('td')
-                    if not a_tag or len(tds) < 3:
-                        continue
-                    
+                a_tag = row.find('a')
+                tds = row.find_all('td')
+                if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     if not clean_title or clean_title == "자세히보기":
                         continue
-                    
                     link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    
-                    # td-write 바로 다음의 td-etc에서 담당부서 추출
-                    dept = "국방부"
-                    write_td = row.select_one('.td-write')
-                    if write_td:
-                        etc_td = write_td.find_next_sibling('td', class_='td-etc')
-                        if etc_td:
-                            d_text = etc_td.get_text(separator=' ', strip=True)
-                            if d_text and not re.search(r'20\d{2}', d_text) and not d_text.isdigit():
-                                dept = d_text
-                    
-                    if dept == "국방부" and len(tds) >= 4:
-                        for td in tds:
-                            classes = td.get('class', [])
-                            t_text = td.get_text(separator=' ', strip=True)
-                            if 'td-etc' in classes and t_text and not re.search(r'20\d{2}', t_text) and not t_text.isdigit() and len(t_text) < 25:
-                                dept = t_text
-                                break
-
-                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-                except Exception:
-                    continue
-    except Exception:
-        pass
+                    items.append({"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link})
+    except: pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
