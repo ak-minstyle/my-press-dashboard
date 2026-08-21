@@ -111,7 +111,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 타이틀 서식 (원문 유지, 줄바꿈 & 가운데 정렬)
+# 📌 타이틀 가운데 정렬 및 줄바꿈 복구
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;'>📰 정부·지자체 보도자료 / ⚖️ 입법예고 &<br>📜 국회 법안 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -174,7 +174,6 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 수집기 (유저 원본 고정 코드)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -297,57 +296,54 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 수집기 (가장 기초적인 순회 방식으로 백지 원상복구)
+# 🪖 국방부 수집기 (방화벽 우회 세션 적용 + 제일 처음 안정적으로 작동했던 본래 로직)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
-    # 에러가 나도 다음 페이지 수집을 계속하도록 for문 안쪽에 try 배치
-    for page in range(1, 4):
-        try:
+    try:
+        # 방화벽 차단 회피를 위한 브라우저 세션 생성 및 강화된 헤더 적용
+        session = requests.Session()
+        mnd_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9",
+            "Connection": "keep-alive"
+        }
+        
+        for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
+            resp = session.get(url, headers=mnd_headers, timeout=12, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # 조건 없이 무조건 모든 표의 행(tr)을 찾습니다.
-            for row in soup.find_all('tr'):
-                try:
-                    a_tag = row.find('a')
-                    if not a_tag:
-                        continue
-                        
-                    title = a_tag.get_text(strip=True)
+            # 제일 처음에 작동했던 원본 로직 (table tr 탐색)
+            for row in soup.select('table tr'):
+                a_tag = row.find('a')
+                tds = row.find_all('td')
+                if a_tag and len(tds) >= 3:
+                    title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
-                    
-                    # 빈 제목이거나 불필요한 텍스트일 경우 넘김
-                    if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
+                    if not clean_title or clean_title == "자세히보기":
                         continue
                         
-                    raw_href = a_tag.get('href', '')
-                    if not raw_href or raw_href.startswith('#') or 'javascript' in raw_href.lower():
-                        continue
-                        
-                    link = urljoin("https://www.mnd.go.kr", raw_href)
-                    
-                    # 텍스트 전체에서 날짜(20XX.XX.XX 형식) 무조건 추출
+                    link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # 복잡한 담당부서 추출은 원천 차단하고 기본값 고정
+                    # td-etc 억지 추출이 아닌 가장 처음에 잘 먹혔던 텍스트 역탐색 로직 복원
                     dept = "국방부"
-                    
-                    items.append({
-                        "기관": "국방부", 
-                        "담당부서": dept, 
-                        "날짜": date, 
-                        "제목": clean_title, 
-                        "링크": link
-                    })
-                except Exception:
-                    continue  # 한 줄 오류나도 다음 줄 진행
-        except Exception:
-            continue  # 한 페이지 오류나도 다음 페이지 진행
+                    for td in tds:
+                        t_text = td.get_text(separator=' ', strip=True)
+                        if t_text and not td.find('a') and not re.search(r'20\d{2}', t_text) and not re.search(r'^\d+$', t_text) and len(t_text) < 25:
+                            dept = t_text
+                            break
+
+                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
             
+            # IP 차단 방지를 위한 페이지간 접속 지연 (0.5초 대기)
+            time.sleep(0.5)
+            
+    except: pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
