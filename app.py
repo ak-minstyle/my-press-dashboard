@@ -296,17 +296,18 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 파서 (td-write 뒤에 오는 td-etc를 담당부서로 수집)
+# 🪖 국방부 파서 (안전한 내부 예외처리 + td-write 직후 td-etc 추출)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.select('table tr'):
+            
+            for row in soup.find_all('tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -314,18 +315,39 @@ def fetch_mnd():
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     if not clean_title or clean_title == "자세히보기":
                         continue
+                    
                     link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # td-write 다음에 위치한 td-etc 지정
-                    dept_tag = row.select_one('.td-write ~ .td-etc')
-                    dept = dept_tag.get_text(separator=' ', strip=True) if dept_tag else "국방부"
-                    if not dept:
+                    # 담당부서 안전 추출
+                    dept = "국방부"
+                    try:
+                        title_td_idx = -1
+                        for idx, td in enumerate(tds):
+                            if td.find('a') == a_tag or 'td-write' in td.get('class', []):
+                                title_td_idx = idx
+                                break
+                        
+                        if title_td_idx != -1 and title_td_idx + 1 < len(tds):
+                            cand = tds[title_td_idx + 1].get_text(separator=' ', strip=True)
+                            if cand and not re.search(r'20\d{2}', cand) and not cand.isdigit() and len(cand) < 30:
+                                dept = cand
+                        
+                        if dept == "국방부":
+                            for td in tds:
+                                classes = td.get('class', [])
+                                if 'td-etc' in classes:
+                                    cand = td.get_text(separator=' ', strip=True)
+                                    if cand and not re.search(r'20\d{2}', cand) and not cand.isdigit() and len(cand) < 30:
+                                        dept = cand
+                                        break
+                    except Exception:
                         dept = "국방부"
 
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+    except Exception:
+        pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
