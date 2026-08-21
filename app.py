@@ -11,10 +11,8 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 웹 페이지 기본 설정
-st.set_page_config(page_title="통합 보도자료 & 국회 법안 대시보드", page_icon="📰", layout="wide")
+st.set_page_config(page_title="통합 보도자료·입법예고 & 국회 법안 대시보드", page_icon="📰", layout="wide")
 
-# 다크모드 방어, 표 스타일링 및 우측 상단 'Running' 애니메이션 완전히 숨김
 st.markdown("""
     <style>
         [data-testid="stStatusWidget"] {
@@ -113,8 +111,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📰 정부·지자체 보도자료 & 📜 국회 법안 통합 대시보드")
-st.caption("국토교통부, 기후에너지환경부, 산림청, 서울시 보도자료 및 국토위/기후에너지환경노동위 발의 법안 실시간 모니터링")
+st.title("📰 정부·지자체 보도자료 / ⚖️ 입법예고 & 📜 국회 법안 통합 대시보드")
+st.caption("국토부, 기후부, 산림청, 서울시, 국세청, 공정위 보도자료 / 하위법령 입법예고 / 국토위·환노위·정무위 법안 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
@@ -184,22 +182,20 @@ def fetch_forest():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            posts = {}
-            for a in soup.find_all('a', href=re.compile(r'nttId=')):
-                raw_href = a.get('href', '')
-                ntt_m = re.search(r'nttId=(\d+)', raw_href)
-                if not ntt_m: continue
-                ntt_id = ntt_m.group(1)
-                link = urljoin("https://www.forest.go.kr", raw_href)
-                parent_box = a.find_parent(['li', 'tr', 'td', 'div'])
-                box_text = parent_box.get_text(separator=' ', strip=True) if parent_box else a.get_text()
-                dm = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', box_text)
-                date = dm.group(1).replace('.', '-').replace('/', '-') if dm else "날짜 미표기"
-                clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a.get_text()).strip()
-                clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
-                if ntt_id not in posts or len(clean_title) > len(posts[ntt_id]['제목']):
-                    posts[ntt_id] = {"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": link}
-            items.extend(posts.values())
+            
+            for row in soup.select('table tbody tr'):
+                tds = row.find_all('td')
+                a_tag = row.find('a')
+                if a_tag and len(tds) >= 3:
+                    raw_text = a_tag.text
+                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\[.*?\]', '', raw_text).strip()
+                    clean_title = re.sub(r'\s+', ' ', clean_title)
+                    if not clean_title or len(clean_title) < 2:
+                        continue
+                    link = urljoin("https://www.forest.go.kr", a_tag.get('href', ''))
+                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
+                    date = date_match.group(1).replace('.', '-').replace('/', '-') if date_match else "날짜 미표기"
+                    items.append({"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": link})
     except: pass
     return items
 
@@ -209,12 +205,10 @@ def fetch_seoul():
     seen_links = set()
     try:
         for page in range(1, 6):
-            # 🔥 핵심 교정: 서울시 공식 페이지 파라미터는 pageIndex가 아닌 curPage 입니다!
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
             resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            
             for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
@@ -227,14 +221,81 @@ def fetch_seoul():
                         link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={n_val}"
                     else:
                         link = urljoin("https://www.seoul.go.kr/news/", raw_href)
-                    
-                    if link in seen_links:
-                        continue
+                    if link in seen_links: continue
                     seen_links.add(link)
-                        
                     date = tds[-1].text.strip()
                     dept = tds[-2].get_text(separator=' ', strip=True)
                     items.append({"기관": "서울특별시", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
+    except: pass
+    return items
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_nts():
+    items = []
+    try:
+        for page in range(1, 4):
+            url = f"https://www.nts.go.kr/nts/na/ntt/selectNttList.do?mi=2201&bbsId=1006&pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            for row in soup.select('table tbody tr'):
+                a_tag = row.find('a')
+                tds = row.find_all('td')
+                if a_tag and len(tds) >= 4:
+                    title = a_tag.text.strip()
+                    link = urljoin("https://www.nts.go.kr/nts/na/ntt/", a_tag.get('href', ''))
+                    date = tds[-2].text.strip()
+                    dept = tds[-3].get_text(separator=' ', strip=True)
+                    items.append({"기관": "국세청", "담당부서": dept if dept else "국세청", "날짜": date, "제목": title, "링크": link})
+    except: pass
+    return items
+
+# 🔥 공정거래위원회 지정 URL 맞춤 수집기
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_ftc():
+    items = []
+    try:
+        for page in range(1, 4):
+            url = f"https://www.ftc.go.kr/www/selectBbsNttList.do?bordCd=3&key=12&searchCtgry=01,02&pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            for row in soup.select('table tbody tr'):
+                a_tag = row.find('a')
+                tds = row.find_all('td')
+                if a_tag and len(tds) >= 4:
+                    title = a_tag.text.strip()
+                    raw_href = a_tag.get('href', '')
+                    link = urljoin("https://www.ftc.go.kr/www/", raw_href)
+                    dept = tds[1].get_text(separator=' ', strip=True) if len(tds) >= 4 else "공정위"
+                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
+                    date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
+                    items.append({"기관": "공정거래위원회", "담당부서": dept if dept else "공정위", "날짜": date, "제목": title, "링크": link})
+    except: pass
+    return items
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_sub_legislation():
+    items = []
+    try:
+        url = "https://opinion.lawmaking.go.kr/gns/elm/stty/lst"
+        resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        for row in soup.select('table tbody tr'):
+            a_tag = row.find('a')
+            tds = row.find_all('td')
+            if a_tag and len(tds) >= 4:
+                title = a_tag.text.strip()
+                link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
+                dept = tds[1].get_text(separator=' ', strip=True)
+                date = tds[-1].get_text(separator=' ', strip=True)
+                
+                date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', date)
+                clean_date = date_match.group(1).replace('.', '-') if date_match else date
+                
+                items.append({"기관": "⚖️ 하위법령 입법예고", "담당부서": dept, "날짜": clean_date, "제목": title, "링크": link})
     except: pass
     return items
 
@@ -258,18 +319,22 @@ def fetch_assembly_bills():
                 if not bill_id: continue
                 link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
                 
-                is_kokto, is_hwan = False, False
+                is_kokto, is_hwan, is_jungmu = False, False, False
                 if "국토" in comm: is_kokto = True
                 elif any(kw in comm for kw in ["환경", "노동", "기후"]): is_hwan = True
+                elif "정무" in comm: is_jungmu = True
                 
                 if not comm:
-                    if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "도시", "부동산", "교통", "물류"]):
+                    if any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "부동산", "교통", "물류"]):
                         is_kokto = True
                     elif any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]):
                         is_hwan = True
+                    elif any(kw in title for kw in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]):
+                        is_jungmu = True
                 
                 if is_kokto: bills.append({"기관": "📜 국토교통위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
                 elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
+                elif is_jungmu: bills.append({"기관": "📜 정무위원회", "담당부서": f"발의: {proposer}", "날짜": date, "제목": title, "링크": link})
     except: pass
     return bills
 
@@ -281,26 +346,27 @@ with col_btn:
 
 progress_bar = st.progress(0, text="데이터 수집 준비 중...")
 
-progress_bar.progress(10, text="🏢 국토교통부 보도자료 수집 중 (1/5)...")
+progress_bar.progress(10, text="🏢 국토부·기후부·산림청·서울시 수집 중...")
 molit_data = fetch_molit()
-
-progress_bar.progress(30, text="🌿 기후에너지환경부 보도자료 수집 중 (2/5)...")
 mcee_data = fetch_mcee()
-
-progress_bar.progress(50, text="🌲 산림청 보도자료 수집 중 (3/5)...")
 forest_data = fetch_forest()
-
-progress_bar.progress(70, text="🏙️ 서울특별시 보도자료 집중 수집 중 (4/5)...")
 seoul_data = fetch_seoul()
 
-progress_bar.progress(90, text="📜 국회 상임위 발의법안 연동 중 (5/5)...")
+progress_bar.progress(40, text="🏛️ 국세청·공정거래위원회 보도자료 수집 중...")
+nts_data = fetch_nts()
+ftc_data = fetch_ftc()
+
+progress_bar.progress(70, text="⚖️ 하위법령(시행령·시행규칙) 입법예고 수집 중...")
+sub_leg_data = fetch_sub_legislation()
+
+progress_bar.progress(90, text="📜 국회 상임위(국토·환노·정무위) 법안 연동 중...")
 bills_data = fetch_assembly_bills()
 
 progress_bar.progress(100, text="✨ 모든 데이터 수집 및 병합 완료!")
 time.sleep(0.5)
 progress_bar.empty()
 
-all_data = molit_data + mcee_data + forest_data + seoul_data + bills_data
+all_data = molit_data + mcee_data + forest_data + seoul_data + nts_data + ftc_data + sub_leg_data + bills_data
 df_total = pd.DataFrame(all_data)
 
 if not df_total.empty:
@@ -308,7 +374,11 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    tabs = st.tabs(["전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시", "📜 국토교통위원회", "📜 기후에너지환경노동위원회"])
+    tabs = st.tabs([
+        "전체 보기", "국토교통부", "기후에너지환경부", "산림청", "서울특별시", 
+        "국세청", "공정거래위원회", "⚖️ 하위법령 입법예고", 
+        "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회"
+    ])
 
     def render_custom_table(filtered_df):
         if filtered_df.empty:
@@ -318,10 +388,10 @@ if not df_total.empty:
         st.write(f"총 **{len(filtered_df)}**건 표시 중")
         
         table_html = "<table class='custom-table'><thead><tr>"
-        table_html += "<th style='width: 140px;'>기관 / 구분</th>"
+        table_html += "<th style='width: 150px;'>기관 / 구분</th>"
         table_html += "<th style='width: 160px;'>담당부서 / 발의자</th>"
         table_html += "<th style='width: 110px;'>날짜</th>"
-        table_html += "<th>보도자료 제목 / 법안명</th>"
+        table_html += "<th>보도자료 제목 / 법안·입법예고명</th>"
         table_html += "</tr></thead><tbody>"
         
         for _, r in filtered_df.iterrows():
@@ -340,7 +410,11 @@ if not df_total.empty:
     with tabs[2]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'])
     with tabs[3]: render_custom_table(df_total[df_total['기관'] == '산림청'])
     with tabs[4]: render_custom_table(df_total[df_total['기관'] == '서울특별시'])
-    with tabs[5]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'])
-    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '📜 기후에너지환경노동위원회'])
+    with tabs[5]: render_custom_table(df_total[df_total['기관'] == '국세청'])
+    with tabs[6]: render_custom_table(df_total[df_total['기관'] == '공정거래위원회'])
+    with tabs[7]: render_custom_table(df_total[df_total['기관'] == '⚖️ 하위법령 입법예고'])
+    with tabs[8]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'])
+    with tabs[9]: render_custom_table(df_total[df_total['기관'] == '📜 기후에너지환경노동위원회'])
+    with tabs[10]: render_custom_table(df_total[df_total['기관'] == '📜 정무위원회'])
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
