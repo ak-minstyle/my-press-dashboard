@@ -173,7 +173,7 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 전용 수집기 (요청받은 원본 로직 적용)
+# 🌲 산림청 수집기 (수정하지 않고 그대로 보존)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -296,12 +296,13 @@ def fetch_mois():
     except: pass
     return items
 
+# 🔥 국방부 보도자료 신규 URL 수집기
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
     try:
         for page in range(1, 4):
-            url = f"https://www.mnd.go.kr/mbshome/mbs/mnd/subview.jsp?id=mnd_020100000000&page={page}"
+            url = f"https://www.mnd.go.kr/mnd/167/subview.do?page={page}"
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
@@ -311,7 +312,7 @@ def fetch_mnd():
                 if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
-                    link = urljoin("https://www.mnd.go.kr/mbshome/mbs/mnd/", raw_href)
+                    link = urljoin("https://www.mnd.go.kr", raw_href)
                     dept = tds[-3].get_text(separator=' ', strip=True) if len(tds) >= 4 else "국방부"
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
@@ -420,7 +421,7 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    # 📌 요청 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
+    # 📌 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
