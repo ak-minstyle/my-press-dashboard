@@ -11,7 +11,7 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 페이지 탭 제목 변경
+# 페이지 탭 제목
 st.set_page_config(page_title="국회 법안·입법예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
@@ -59,7 +59,7 @@ st.markdown("""
             font-weight: bold !important;
         }
         
-        /* 검색창 디자인 */
+        /* 검색창 및 버튼 디자인 */
         div[data-baseweb="input"] {
             background-color: #f8fafc !important;
             border: 1px solid #cbd5e1 !important;
@@ -81,20 +81,11 @@ st.markdown("""
         }
         
         /* 표 가로 스크롤 래퍼 (모바일 핵심) */
-        .table-responsive {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            margin-bottom: 1rem;
-            border-radius: 6px;
-        }
-        
-        /* 표 기본 디자인 */
+        .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table {
             width: 100%;
             border-collapse: collapse;
             background-color: #ffffff !important;
-            min-width: 600px;
         }
         .custom-table th {
             background-color: #f1f5f9 !important;
@@ -111,24 +102,17 @@ st.markdown("""
             color: #334155 !important;
             text-align: left;
         }
-        .nowrap-col {
-            white-space: nowrap !important;
-        }
-        .custom-table tr:hover {
-            background-color: #f8fafc !important;
-        }
+        .nowrap-col { white-space: nowrap !important; }
+        .custom-table tr:hover { background-color: #f8fafc !important; }
         .dash-link {
             color: #1d4ed8 !important;
             font-weight: bold !important;
             text-decoration: none !important;
             word-break: keep-all;
         }
-        .dash-link:hover {
-            text-decoration: underline !important;
-            color: #1e40af !important;
-        }
+        .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
         
-        /* 📱 스마트폰 모바일 화면 전용 (가로 768px 이하) 카드형 전환 */
+        /* 📱 스마트폰(모바일) 전용 카드형 UI 전환 */
         @media screen and (max-width: 768px) {
             h1 { font-size: 1.4rem !important; line-height: 1.4 !important; }
             p { font-size: 0.85rem !important; }
@@ -163,6 +147,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# 📌 타이틀 서식
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -404,13 +389,14 @@ def fetch_mnd():
             continue
     return items
 
+# 💡 입법예고 & 행정예고 수집 (우측 기준 인덱싱 적용)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    # 입법예고, 행정예고 URL과 각각의 탭 라벨 지정
+    # 두 개의 URL과 각각 들어갈 탭 이름 설정
     targets = [
         ("https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "⚖️ 입법예고"),
         ("https://opinion.lawmaking.go.kr/gcom/ogLmPp", "⚖️ 행정예고")
@@ -426,17 +412,18 @@ def fetch_sub_legislation():
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 
-                # 좌측에서 6번째 칼럼까지 존재해야 하므로 조건 변경
+                # 우측에서 6번째 칸을 가져오려면 최소 6개 이상의 td가 있어야 함
                 if a_tag and len(tds) >= 6:
                     title = a_tag.text.strip()
                     link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
                     
-                    # 4번째 칼럼(인덱스 3): 접수기간 -> '날짜'에 표기
-                    date_text = tds[3].get_text(separator=' ', strip=True)
+                    # 우측에서 6번째: 소관부처
+                    dept = tds[-6].get_text(separator=' ', strip=True)
                     
-                    # 6번째 칼럼(인덱스 5): 소관부처 -> '담당부서'에 표기
-                    dept = tds[5].get_text(separator=' ', strip=True)
+                    # 우측에서 4번째: 접수기간
+                    date_text = tds[-4].get_text(separator=' ', strip=True)
                     
+                    # 날짜란에 접수기간 전체(예: 2024.01.01 ~ 2024.02.01) 표기
                     items.append({"기관": tag, "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
         except: 
             pass
@@ -522,6 +509,7 @@ df_total = pd.DataFrame(all_data)
 if not df_total.empty:
     df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
 
+    # 접수기간 등 특수 포맷의 날짜 정렬을 위해 정규식 추출
     df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
     df_total = df_total.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
 
@@ -545,17 +533,21 @@ if not df_total.empty:
         
         if "📜" in tab_name:
             col1_title, col2_title, col4_title = "상임위 구분", "대표발의자", "법안명"
+            date_col_title = "날짜"
         elif "⚖️" in tab_name:
             col1_title, col2_title, col4_title = "구분", "소관부처", "예고명"
+            date_col_title = "접수기간"
         elif tab_name == "전체 보기":
             col1_title, col2_title, col4_title = "기관 / 구분", "담당부서 / 발의자", "보도자료 제목 / 법안·입법예고명"
+            date_col_title = "날짜(접수기간)"
         else:
             col1_title, col2_title, col4_title = "기관명", "담당부서", "보도자료 제목"
+            date_col_title = "날짜"
         
         table_html = "<div class='table-responsive'><table class='custom-table'><thead><tr>"
         table_html += f"<th style='width: 150px;'>{col1_title}</th>"
         table_html += f"<th style='width: 160px;'>{col2_title}</th>"
-        table_html += f"<th style='width: 180px;'>날짜(접수기간)</th>"
+        table_html += f"<th style='width: 180px;'>{date_col_title}</th>"
         table_html += f"<th>{col4_title}</th>"
         table_html += "</tr></thead><tbody>"
         
@@ -563,7 +555,7 @@ if not df_total.empty:
             table_html += f"<tr>"
             table_html += f"<td class='nowrap-col' data-label='{col1_title}'><b>{r['기관']}</b></td>"
             table_html += f"<td class='nowrap-col' data-label='{col2_title}'>{r['담당부서']}</td>"
-            table_html += f"<td class='nowrap-col' data-label='날짜'>{r['날짜']}</td>"
+            table_html += f"<td class='nowrap-col' data-label='{date_col_title}'>{r['날짜']}</td>"
             table_html += f"<td data-label='{col4_title}'><a href='{r['링크']}' target='_blank' rel='noreferrer noopener' class='dash-link'>{r['제목']}</a></td>"
             table_html += f"</tr>"
             
