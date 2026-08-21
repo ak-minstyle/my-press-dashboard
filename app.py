@@ -173,26 +173,35 @@ def fetch_mcee():
     except: pass
     return items
 
+# 🔥 산림청 수집기 보완 (응답시간 연장 및 nttId 직연결 파싱 추가)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
     try:
         for page in range(1, 4):
-            url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_1036&mn=NKFS_04_02_01&pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
             for row in soup.select('table tbody tr'):
-                tds = row.find_all('td')
                 a_tag = row.find('a')
+                tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
                     raw_text = a_tag.text
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\[.*?\]', '', raw_text).strip()
                     clean_title = re.sub(r'\s+', ' ', clean_title)
                     if not clean_title or len(clean_title) < 2:
                         continue
-                    link = urljoin("https://www.forest.go.kr", a_tag.get('href', ''))
+                        
+                    raw_href = a_tag.get('href', '')
+                    ntt_match = re.search(r"nttId=(\d+)|'(\d{5,})'", str(row) + raw_href)
+                    if ntt_match:
+                        ntt_id = ntt_match.group(1) if ntt_match.group(1) else ntt_match.group(2)
+                        link = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardArticle.do?nttId={ntt_id}&bbsId=BBSMSTR_1036&mn=NKFS_04_02_01"
+                    else:
+                        link = urljoin("https://www.forest.go.kr", raw_href)
+                        
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-').replace('/', '-') if date_match else "날짜 미표기"
                     items.append({"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": link})
@@ -261,7 +270,6 @@ def fetch_ftc():
     except: pass
     return items
 
-# 🔥 행정안전부 우측 3번째 칼럼(tds[-3]) 담당부서 추출 수정
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mois():
     items = []
@@ -285,7 +293,6 @@ def fetch_mois():
                     else:
                         link = urljoin("https://www.mois.go.kr/frt/bbs/type010/", raw_href)
                         
-                    # 우측 3번째 칼럼(tds[-3]) 추출
                     dept_text = tds[-3].get_text(separator=' ', strip=True) if len(tds) >= 3 else "행정안전부"
                     dept = dept_text if (dept_text and not re.search(r'^\d{4}[-.\/]', dept_text)) else "행정안전부"
                         
