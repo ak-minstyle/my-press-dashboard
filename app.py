@@ -173,14 +173,14 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 가장 처음 잘 작동하던 원본 산림청 코드 100% 복원
+# 🌲 [대화 시작시점 원본 100% 복원] 산림청 수집 함수
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
     try:
         for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -197,7 +197,13 @@ def fetch_forest():
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-').replace('/', '-') if date_match else "날짜 미표기"
                     items.append({"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+    except Exception:
+        pass
+    
+    # 일시적 네트워크 미응답 시 빈 결과 캐싱 방지
+    if not items:
+        st.cache_data.clear()
+        
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -418,6 +424,7 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
+    # 📌 요청 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
