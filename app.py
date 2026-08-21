@@ -250,7 +250,7 @@ def fetch_nts():
     except: pass
     return items
 
-# 🔥 공정거래위원회 지정 URL 맞춤 수집기
+# 🔥 공정거래위원회 담당부서 컬럼 추출 수정 (제목 바로 우측 칼럼 지정)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_ftc():
     items = []
@@ -263,14 +263,25 @@ def fetch_ftc():
             for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
-                if a_tag and len(tds) >= 4:
+                if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
                     link = urljoin("https://www.ftc.go.kr/www/", raw_href)
-                    dept = tds[1].get_text(separator=' ', strip=True) if len(tds) >= 4 else "공정위"
+                    
+                    # 제목(a태그)이 포함된 td의 바로 다음(우측) td를 담당부서로 지정
+                    dept = "공정위"
+                    for idx, td in enumerate(tds):
+                        if td.find('a'):
+                            if idx + 1 < len(tds):
+                                dept_text = tds[idx + 1].get_text(separator=' ', strip=True)
+                                # 날짜 형식이 아닌 텍스트를 담당부서로 수집
+                                if dept_text and not re.search(r'^\d{4}[-.\/]', dept_text):
+                                    dept = dept_text
+                            break
+                            
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    items.append({"기관": "공정거래위원회", "담당부서": dept if dept else "공정위", "날짜": date, "제목": title, "링크": link})
+                    items.append({"기관": "공정거래위원회", "담당부서": dept, "날짜": date, "제목": title, "링크": link})
     except: pass
     return items
 
