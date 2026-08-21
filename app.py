@@ -111,8 +111,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📰 정부·지자체 보도자료 / ⚖️ 입법예고 & 📜 국회 법안 통합 대시보드")
-st.caption("국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링")
+# 📌 타이틀 줄바꿈 & 가운데 정렬
+st.markdown("<h1 style='text-align: center; color: #0f172a; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;'>📰 정부·지자체 보도자료 / ⚖️ 입법예고 &<br>📜 국회 법안 통합 대시보드</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
@@ -296,36 +297,58 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 파서 (td-etc 클래스에서 담당부서 직접 추출)
+# 🪖 국토부 표준 표 파싱 구조 기반 국방부 수집기 재구축
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
+    mnd_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://www.mnd.go.kr/mnd/167/subview.do"
+    }
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=mnd_headers, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.select('table tr'):
-                a_tag = row.find('a')
-                tds = row.find_all('td')
-                if a_tag and len(tds) >= 3:
-                    title = a_tag.text.strip()
-                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
-                    if not clean_title or clean_title == "자세히보기":
-                        continue
-                    link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
-                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
-                    date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    
-                    # td-etc 클래스 태그에서 담당부서 추출
-                    dept_tag = row.select_one('.td-etc')
-                    dept = dept_tag.get_text(separator=' ', strip=True) if dept_tag else "국방부"
-                    if not dept:
+            
+            # 국토부와 동일하게 table tr 순회
+            for row in soup.select('table tbody tr') or soup.select('table tr'):
+                try:
+                    a_tag = row.find('a')
+                    tds = row.find_all('td')
+                    if a_tag and len(tds) >= 3:
+                        title = a_tag.text.strip()
+                        clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
+                        if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
+                            continue
+                        
+                        link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
+                        date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
+                        date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
+                        
+                        # 국방부 표 구조: .td-write 바로 다음 .td-etc 추출
                         dept = "국방부"
+                        write_td = row.select_one('.td-write')
+                        if write_td:
+                            etc_td = write_td.find_next_sibling('td', class_=re.compile(r'td-etc'))
+                            if etc_td:
+                                d_text = etc_td.get_text(strip=True)
+                                if d_text and not re.search(r'20\d{2}', d_text):
+                                    dept = d_text
+                        
+                        if dept == "국방부" and len(tds) >= 4:
+                            etc_tds = row.select('td.td-etc')
+                            if etc_tds:
+                                d_text = etc_tds[0].get_text(strip=True)
+                                if d_text and not re.search(r'20\d{2}', d_text):
+                                    dept = d_text
 
-                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+                        items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
+                except Exception:
+                    continue
+    except Exception:
+        pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
