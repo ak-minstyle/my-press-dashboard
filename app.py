@@ -12,7 +12,7 @@ import time
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 페이지 탭 제목도 맞춤 변경
-st.set_page_config(page_title="입법예고·국회 법안 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
+st.set_page_config(page_title="국회 법안 입법·행정예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
     <style>
