@@ -114,12 +114,12 @@ st.markdown("""
 st.title("📰 정부·지자체 보도자료 / ⚖️ 입법예고 & 📜 국회 법안 통합 대시보드")
 st.caption("국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
 def fetch_molit_dept_parallel(item):
     try:
-        d_resp = requests.get(item['링크'], headers=HEADERS, timeout=3, verify=False)
+        d_resp = requests.get(item['링크'], headers=HEADERS, timeout=4, verify=False)
         d_resp.encoding = 'utf-8'
         d_soup = BeautifulSoup(d_resp.text, 'html.parser')
         for f in d_soup.find_all('a'):
@@ -136,7 +136,7 @@ def fetch_molit():
     try:
         for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=4, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -158,7 +158,7 @@ def fetch_mcee():
     try:
         for page in range(1, 4):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=4, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -173,7 +173,7 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청 수집기 (전달해주신 원본 코드 100% 보존)
+# 🌲 산림청 수집기 (전달받은 원본 코드 100% 고정)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
@@ -209,7 +209,7 @@ def fetch_seoul():
     try:
         for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -238,7 +238,7 @@ def fetch_ftc():
     try:
         for page in range(1, 4):
             url = f"https://www.ftc.go.kr/www/selectBbsNttList.do?bordCd=3&key=12&searchCtgry=01,02&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=4, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -270,7 +270,7 @@ def fetch_mois():
     try:
         for page in range(1, 4):
             url = f"https://www.mois.go.kr/frt/bbs/type010/commonSelectBoardList.do?bbsId=BBSMSTR_000000000008&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=4, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -296,45 +296,28 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 보안 차단 우회 및 전용 헤더 파서
+# 🪖 국토부(fetch_molit) 파싱 구조를 적용한 국방부 보도자료 수집기
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
-    mnd_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Referer": "https://www.mnd.go.kr/mnd/167/subview.do",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=mnd_headers, timeout=6, verify=False)
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
-                    clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
-                    if not clean_title or len(clean_title) < 2 or clean_title == "자세히보기":
+                    if not clean_title or clean_title == "자세히보기":
                         continue
-                    
-                    raw_href = a_tag.get('href', '')
-                    link = urljoin("https://www.mnd.go.kr", raw_href)
-                    
+                    link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
-                    
-                    dept = "국방부"
-                    if len(tds) >= 4:
-                        d_text = tds[-3].get_text(separator=' ', strip=True)
-                        if d_text and not re.search(r'^\d{4}[-.\/]', d_text) and len(d_text) < 20:
-                            dept = d_text
-                            
-                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
+                    items.append({"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link})
     except: pass
     return items
 
@@ -343,7 +326,7 @@ def fetch_sub_legislation():
     items = []
     try:
         url = "https://opinion.lawmaking.go.kr/gns/elm/stty/lst"
-        resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+        resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
@@ -369,7 +352,7 @@ def fetch_assembly_bills():
     url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
     params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
     try:
-        resp = requests.get(url, params=params, timeout=6, verify=False)
+        resp = requests.get(url, params=params, timeout=10, verify=False)
         data = resp.json()
         if "nzmimeepazxkubdpn" in data:
             rows = data["nzmimeepazxkubdpn"][1]["row"]
@@ -443,7 +426,7 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    # 📌 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
+    # 📌 지정 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
