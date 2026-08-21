@@ -11,7 +11,7 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-st.set_page_config(page_title="통합 보도자료·입법예고 & 국회 법안 대시보드", page_icon="📰", layout="wide")
+st.set_page_config(page_title="발의 법률안 및 법령 보도자료 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
     <style>
@@ -111,7 +111,8 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📰 정부·지자체 보도자료 / ⚖️ 입법예고 & 📜 국회 법안 통합 대시보드")
+# 📌 페이지 타이틀 (줄바꿈 반영)
+st.markdown("<h1 style='color:#0f172a; font-size: 2.2rem; font-weight: 700; margin-bottom: 0.5rem;'>발의 법률안 및 법령<br>보도자료 대시보드</h1>", unsafe_allow_html=True)
 st.caption("국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링")
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -296,17 +297,23 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 파서 (기본 수집 보장 + .td-write 바로 뒤의 .td-etc 추출)
+# 🪖 국방부 수집기 (타임아웃 10초 확장 + Referer 지정 + td-write 다음 td-etc 정밀 타겟)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
+    mnd_headers = {
+        **HEADERS,
+        "Referer": "https://www.mnd.go.kr/mnd/167/subview.do"
+    }
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = requests.get(url, headers=mnd_headers, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.select('table tr'):
+            
+            rows = soup.select('table tbody tr') if soup.select('table tbody tr') else soup.select('table tr')
+            for row in rows:
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -314,25 +321,35 @@ def fetch_mnd():
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     if not clean_title or clean_title == "자세히보기":
                         continue
+                    
                     link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # 담당부서: 제목 셀(.td-write) 바로 다음의 형제 셀(.td-etc) 탐색
+                    # td-write 다음에 위치한 td-etc 지정 추출
                     dept = "국방부"
-                    try:
-                        write_td = a_tag.find_parent('td')
-                        if write_td:
-                            next_td = write_td.find_next_sibling('td')
-                            if next_td:
-                                d_text = next_td.get_text(separator=' ', strip=True)
-                                if d_text and not re.search(r'20\d{2}', d_text) and not d_text.isdigit():
-                                    dept = d_text
-                    except:
-                        dept = "국방부"
+                    write_td = row.select_one('.td-write')
+                    if write_td:
+                        next_etc = write_td.find_next_sibling(class_=re.compile(r'td-etc'))
+                        if next_etc:
+                            d_text = next_etc.get_text(separator=' ', strip=True)
+                            if d_text and not re.search(r'20\d{2}', d_text) and not d_text.isdigit() and len(d_text) < 30:
+                                dept = d_text
+                    
+                    if dept == "국방부":
+                        etc_tds = row.select('.td-etc')
+                        if len(etc_tds) >= 2:
+                            d_text = etc_tds[1].get_text(separator=' ', strip=True)
+                            if d_text and not re.search(r'20\d{2}', d_text) and not d_text.isdigit() and len(d_text) < 30:
+                                dept = d_text
+                        elif len(etc_tds) == 1:
+                            d_text = etc_tds[0].get_text(separator=' ', strip=True)
+                            if d_text and not re.search(r'20\d{2}', d_text) and not d_text.isdigit() and len(d_text) < 30:
+                                dept = d_text
 
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+    except Exception:
+        pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
