@@ -389,20 +389,19 @@ def fetch_mnd():
             continue
     return items
 
-# 💡 입법예고 & 행정예고 수집 (우측 기준 인덱싱 적용)
+# 💡 입법예고 & 행정예고 분리 파싱
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
     session = requests.Session()
     session.headers.update(HEADERS)
     
-    # 두 개의 URL과 각각 들어갈 탭 이름 설정
-    targets = [
-        ("https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "⚖️ 입법예고"),
-        ("https://opinion.lawmaking.go.kr/gcom/ogLmPp", "⚖️ 행정예고")
+    # 1. ⚖️ 입법예고 탭에 파싱될 사이트들 (우측 6번째 소관부처, 우측 4번째 날짜/접수기간)
+    leg_targets = [
+        "https://opinion.lawmaking.go.kr/gns/elm/stty/lst",
+        "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
     ]
-    
-    for url, tag in targets:
+    for url in leg_targets:
         try:
             resp = session.get(url, timeout=8, verify=False)
             resp.encoding = 'utf-8'
@@ -412,21 +411,32 @@ def fetch_sub_legislation():
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 
-                # 우측에서 6번째 칸을 가져오려면 최소 6개 이상의 td가 있어야 함
                 if a_tag and len(tds) >= 6:
                     title = a_tag.text.strip()
                     link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
-                    
-                    # 우측에서 6번째: 소관부처
                     dept = tds[-6].get_text(separator=' ', strip=True)
-                    
-                    # 우측에서 4번째: 접수기간
                     date_text = tds[-4].get_text(separator=' ', strip=True)
-                    
-                    # 날짜란에 접수기간 전체(예: 2024.01.01 ~ 2024.02.01) 표기
-                    items.append({"기관": tag, "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
-        except: 
-            pass
+                    items.append({"기관": "⚖️ 입법예고", "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
+        except: pass
+
+    # 2. ⚖️ 행정예고 탭에 파싱될 사이트 (우측 3번째 소관부처, 우측 2번째 날짜)
+    adm_url = "https://opinion.lawmaking.go.kr/gcom/admpp"
+    try:
+        resp = session.get(adm_url, timeout=8, verify=False)
+        resp.encoding = 'utf-8'
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        for row in soup.select('table tbody tr'):
+            a_tag = row.find('a')
+            tds = row.find_all('td')
+            
+            if a_tag and len(tds) >= 3:
+                title = a_tag.text.strip()
+                link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
+                dept = tds[-3].get_text(separator=' ', strip=True)
+                date_text = tds[-2].get_text(separator=' ', strip=True)
+                items.append({"기관": "⚖️ 행정예고", "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
+    except: pass
             
     return items
 
@@ -509,7 +519,6 @@ df_total = pd.DataFrame(all_data)
 if not df_total.empty:
     df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
 
-    # 접수기간 등 특수 포맷의 날짜 정렬을 위해 정규식 추출
     df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
     df_total = df_total.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
 
