@@ -139,7 +139,7 @@ def fetch_molit():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 4:
@@ -161,7 +161,7 @@ def fetch_mcee():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 5:
@@ -173,21 +173,21 @@ def fetch_mcee():
     except: pass
     return items
 
-# 🌲 산림청: tbody 태그 파싱 오류를 수정한 안전 파서
+# 🌲 가장 처음 잘 작동하던 원본 산림청 코드 100% 복원
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
     try:
         for page in range(1, 4):
-            url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?bbsId=BBSMSTR_1036&mn=NKFS_04_02_01&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
+            url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 tds = row.find_all('td')
                 a_tag = row.find('a')
-                if a_tag and len(tds) >= 2:
+                if a_tag and len(tds) >= 3:
                     raw_text = a_tag.text
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\[.*?\]', '', raw_text).strip()
                     clean_title = re.sub(r'\s+', ' ', clean_title)
@@ -210,7 +210,7 @@ def fetch_seoul():
             resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -239,7 +239,7 @@ def fetch_ftc():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -271,7 +271,7 @@ def fetch_mois():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -303,7 +303,7 @@ def fetch_mnd():
             resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
-            for row in soup.find_all('tr'):
+            for row in soup.select('table tbody tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 if a_tag and len(tds) >= 3:
@@ -326,7 +326,7 @@ def fetch_sub_legislation():
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        for row in soup.find_all('tr'):
+        for row in soup.select('table tbody tr'):
             a_tag = row.find('a')
             tds = row.find_all('td')
             if a_tag and len(tds) >= 4:
@@ -418,7 +418,6 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
-    # 📌 요청 탭 순서: 국토위 -> 환노위 -> 정무위 -> 입법예고 -> 국토부 -> 기후부 -> 행안부 -> 국방부 -> 공정위 -> 산림청 -> 서울시
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
