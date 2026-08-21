@@ -5,6 +5,7 @@ import re
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import urllib3
+import holidays  # 한국 공휴일 자동 감지 라이브러리
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -31,6 +32,12 @@ def main():
     today_str = kst_now.strftime("%Y-%m-%d")
     yesterday_str = (kst_now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     
+    # 🔥 주말(토=5, 일=6) 및 한국 법정 공휴일 체크
+    kr_holidays = holidays.KR()
+    if kst_now.weekday() >= 5 or kst_now in kr_holidays:
+        print(f"오늘은 주말 또는 공휴일({today_str})입니다. 알림 발송을 건너뜁니다.")
+        return
+
     target_dates = [today_str, yesterday_str]
     collected_items = []
 
