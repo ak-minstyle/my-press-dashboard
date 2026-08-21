@@ -388,7 +388,7 @@ def fetch_mnd():
             continue
     return items
 
-# 💡 입법예고 & 행정예고 독립적 파싱 수집기
+# 💡 입법예고 & 행정예고 독립적 파싱 수집기 (tbody 의존성 제거 및 행 단위 순회 고정)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
@@ -406,36 +406,44 @@ def fetch_sub_legislation():
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            for row in soup.select('table tbody tr'):
+            for row in soup.find_all('tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
                 
                 if a_tag and len(tds) >= 6:
-                    title = a_tag.text.strip()
+                    raw_title = a_tag.get_text(strip=True)
+                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', raw_title).strip()
+                    if not clean_title or len(clean_title) < 2 or "공고번호" in clean_title:
+                        continue
+                        
                     link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
                     dept = tds[-6].get_text(separator=' ', strip=True)
                     date_text = tds[-4].get_text(separator=' ', strip=True)
-                    items.append({"기관": "⚖️ 입법예고", "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
+                    items.append({"기관": "⚖️ 입법예고", "담당부서": dept, "날짜": date_text, "제목": clean_title, "링크": link})
         except: pass
 
     # 2. ⚖️ 행정예고 (https://opinion.lawmaking.go.kr/gcom/admpp)
-    # 📌 지시 반영: 우측 3번째(tds[-3]) = 소관부처, 우측 2번째(tds[-2]) = 날짜
+    # 우측 3번째(tds[-3]) = 소관부처, 우측 2번째(tds[-2]) = 날짜
     adm_url = "https://opinion.lawmaking.go.kr/gcom/admpp"
     try:
         resp = session.get(adm_url, timeout=8, verify=False)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        for row in soup.select('table tbody tr'):
+        for row in soup.find_all('tr'):
             a_tag = row.find('a')
             tds = row.find_all('td')
             
-            if a_tag and len(tds) >= 4:
-                title = a_tag.text.strip()
+            if a_tag and len(tds) >= 3:
+                raw_title = a_tag.get_text(strip=True)
+                clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', raw_title).strip()
+                if not clean_title or len(clean_title) < 2 or "공고번호" in clean_title:
+                    continue
+                    
                 link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
                 dept = tds[-3].get_text(separator=' ', strip=True)
                 date_text = tds[-2].get_text(separator=' ', strip=True)
-                items.append({"기관": "⚖️ 행정예고", "담당부서": dept, "날짜": date_text, "제목": title, "링크": link})
+                items.append({"기관": "⚖️ 행정예고", "담당부서": dept, "날짜": date_text, "제목": clean_title, "링크": link})
     except: pass
             
     return items
