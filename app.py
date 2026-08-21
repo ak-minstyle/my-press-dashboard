@@ -111,7 +111,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 원본 타이틀 유지 + 줄바꿈 & 가운데 정렬
+# 📌 타이틀 줄바꿈 및 가운데 정렬 복구
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;'>📰 정부·지자체 보도자료 / ⚖️ 입법예고 &<br>📜 국회 법안 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; font-size: 0.95rem; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -297,39 +297,44 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국토부(fetch_molit) 방식 기반 국방부 보도자료 수집기
+# 🪖 국방부 수집기 (오류 낸 파라미터를 복구하고 국토부의 단순 <tr> 파싱 방식 적용)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
     try:
         for page in range(1, 4):
-            url = f"https://www.mnd.go.kr/mnd/167/subview.do?page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            # 이전 코드에서 실수했던 page={page}를 정상 파라미터인 pageIndex={page}로 복구
+            url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
+            resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            rows = soup.select('table tbody tr') or soup.select('table tr')
-            for row in rows:
+            # 국토부처럼 단순하게 모든 행(tr)을 찾아서 순회
+            for row in soup.select('table tr'):
                 a_tag = row.find('a')
                 tds = row.find_all('td')
+                
+                # a 태그가 존재하고 셀(td)이 충분히 있는 정상적인 게시글 행만 취급
                 if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
-                    if not clean_title or clean_title == "자세히보기":
-                        continue
                     
+                    # 제목이 비어있거나 쓸데없는 태그인 경우 스킵
+                    if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
+                        continue
+                        
                     link = urljoin("https://www.mnd.go.kr", a_tag.get('href', ''))
+                    
+                    # 날짜는 행 텍스트 전체에서 가장 안전하게 추출
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
+                    # 담당부서 역추적 파싱 없이 초기 안정화 상태로 롤백
                     dept = "국방부"
-                    if len(tds) >= 4:
-                        d_cand = tds[-3].get_text(strip=True)
-                        if d_cand and not re.search(r'20\d{2}', d_cand):
-                            dept = d_cand
-                            
+                    
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+    except: 
+        pass
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
