@@ -11,7 +11,7 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 페이지 탭 제목 변경
+# 페이지 탭 제목
 st.set_page_config(page_title="국회 법안·입법예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
@@ -34,7 +34,7 @@ st.markdown("""
             background-color: #ffffff !important;
             border-bottom: 2px solid #cbd5e1 !important;
             flex-wrap: nowrap;
-            overflow-x: auto; /* 모바일에서 탭 가로 스크롤 허용 */
+            overflow-x: auto; 
         }
         div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
             background-color: #f1f5f9 !important;
@@ -59,7 +59,7 @@ st.markdown("""
             font-weight: bold !important;
         }
         
-        /* 검색창 디자인 */
+        /* 검색창 및 버튼 디자인 */
         div[data-baseweb="input"] {
             background-color: #f8fafc !important;
             border: 1px solid #cbd5e1 !important;
@@ -80,21 +80,12 @@ st.markdown("""
             color: #ffffff !important;
         }
         
-        /* 표 가로 스크롤 래퍼 (모바일 핵심) */
-        .table-responsive {
-            width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            margin-bottom: 1rem;
-            border-radius: 6px;
-        }
-        
-        /* 표 기본 디자인 */
+        /* 기본 PC용 표 디자인 */
+        .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table {
             width: 100%;
             border-collapse: collapse;
             background-color: #ffffff !important;
-            min-width: 600px; /* 모바일에서도 표가 너무 찌그러지지 않게 최소 너비 보장 */
         }
         .custom-table th {
             background-color: #f1f5f9 !important;
@@ -111,35 +102,55 @@ st.markdown("""
             color: #334155 !important;
             text-align: left;
         }
-        .nowrap-col {
-            white-space: nowrap !important;
-        }
-        .custom-table tr:hover {
-            background-color: #f8fafc !important;
-        }
+        .nowrap-col { white-space: nowrap !important; }
+        .custom-table tr:hover { background-color: #f8fafc !important; }
         .dash-link {
             color: #1d4ed8 !important;
             font-weight: bold !important;
             text-decoration: none !important;
             word-break: keep-all;
         }
-        .dash-link:hover {
-            text-decoration: underline !important;
-            color: #1e40af !important;
-        }
+        .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
         
-        /* 📱 스마트폰 모바일 화면 전용 (가로 768px 이하) 최적화 */
+        /* 📱 스마트폰(모바일) 전용 카드형 UI 전환 (가로 768px 이하) */
         @media screen and (max-width: 768px) {
             h1 { font-size: 1.4rem !important; line-height: 1.4 !important; }
             p { font-size: 0.85rem !important; }
-            .custom-table th, .custom-table td { padding: 10px 8px; font-size: 13px; }
-            div[data-baseweb="tab-list"] button[data-baseweb="tab"] { padding: 8px 12px !important; }
-            div[data-baseweb="tab-list"] button[data-baseweb="tab"] * { font-size: 13px !important; }
+            
+            /* 가로 스크롤 제거 후 카드 블록 형태로 전환 */
+            .custom-table, .custom-table tbody { display: block; width: 100%; }
+            .custom-table thead { display: none; } /* 기존 표 헤더는 가림 */
+            
+            .custom-table tr {
+                display: block;
+                margin-bottom: 12px;
+                border: 1px solid #cbd5e1;
+                border-radius: 8px;
+                padding: 12px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .custom-table td {
+                display: flex;
+                flex-direction: column;
+                border: none !important; 
+                padding: 6px 0;
+                font-size: 14px;
+            }
+            
+            /* data-label 속성값을 가져와서 컬럼 제목처럼 달아줌 */
+            .custom-table td::before {
+                content: attr(data-label); 
+                font-size: 11px;
+                color: #64748b;
+                font-weight: bold;
+                margin-bottom: 4px;
+            }
+            .nowrap-col { white-space: normal !important; }
         }
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 변경된 타이틀 및 줄바꿈 적용
+# 📌 타이틀
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -162,10 +173,12 @@ def fetch_molit_dept_parallel(item):
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_molit():
     items = []
+    session = requests.Session() # 세션 풀링 적용 (속도 최적화)
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -184,10 +197,12 @@ def fetch_molit():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mcee():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -205,10 +220,12 @@ def fetch_mcee():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_forest():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             posts = {}
@@ -234,10 +251,12 @@ def fetch_forest():
 def fetch_seoul():
     items = []
     seen_links = set()
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -263,10 +282,12 @@ def fetch_seoul():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_ftc():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.ftc.go.kr/www/selectBbsNttList.do?bordCd=3&key=12&searchCtgry=01,02&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -295,10 +316,12 @@ def fetch_ftc():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mois():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
             url = f"https://www.mois.go.kr/frt/bbs/type010/commonSelectBoardList.do?bbsId=BBSMSTR_000000000008&pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=5, verify=False)
+            resp = session.get(url, timeout=6, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tbody tr'):
@@ -327,10 +350,12 @@ def fetch_mois():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     for page in range(1, 4):
         try:
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = requests.get(url, headers=HEADERS, timeout=12, verify=False)
+            resp = session.get(url, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -352,15 +377,7 @@ def fetch_mnd():
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    dept = "국방부"
-                    etc_tds = row.find_all('td', class_=re.compile(r'td-etc'))
-                    for td in etc_tds:
-                        t_text = td.get_text(strip=True)
-                        if t_text and not re.match(r'^\d+$', t_text) and not re.search(r'20\d{2}', t_text):
-                            dept = t_text
-                            break
-                            
-                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
+                    items.append({"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link})
                 except Exception:
                     continue 
         except Exception:
@@ -370,9 +387,11 @@ def fetch_mnd():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
+    session = requests.Session()
+    session.headers.update(HEADERS)
     try:
         url = "https://opinion.lawmaking.go.kr/gns/elm/stty/lst"
-        resp = requests.get(url, headers=HEADERS, timeout=6, verify=False)
+        resp = session.get(url, timeout=6, verify=False)
         resp.encoding = 'utf-8'
         soup = BeautifulSoup(resp.text, 'html.parser')
         
@@ -395,10 +414,11 @@ def fetch_sub_legislation():
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_assembly_bills():
     bills = []
-    url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-    params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
+    session = requests.Session()
     try:
-        resp = requests.get(url, params=params, timeout=10, verify=False)
+        url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
+        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
+        resp = session.get(url, params=params, timeout=10, verify=False)
         data = resp.json()
         if "nzmimeepazxkubdpn" in data:
             rows = data["nzmimeepazxkubdpn"][1]["row"]
@@ -433,7 +453,6 @@ def fetch_assembly_bills():
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
-    # 📌 버튼 이름 변경 반영
     if st.button("🔄 최신 데이터 새로고침"):
         st.cache_data.clear()
         st.rerun()
@@ -501,6 +520,7 @@ if not df_total.empty:
         else:
             col1_title, col2_title, col4_title = "기관명", "담당부서", "보도자료 제목"
         
+        # 💡 HTML 렌더링 시 모바일 카드뷰의 제목으로 쓰일 data-label 속성 삽입
         table_html = "<div class='table-responsive'><table class='custom-table'><thead><tr>"
         table_html += f"<th style='width: 150px;'>{col1_title}</th>"
         table_html += f"<th style='width: 160px;'>{col2_title}</th>"
@@ -510,10 +530,10 @@ if not df_total.empty:
         
         for _, r in filtered_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='nowrap-col'><b>{r['기관']}</b></td>"
-            table_html += f"<td class='nowrap-col'>{r['담당부서']}</td>"
-            table_html += f"<td class='nowrap-col'>{r['날짜']}</td>"
-            table_html += f"<td><a href='{r['링크']}' target='_blank' rel='noreferrer noopener' class='dash-link'>{r['제목']}</a></td>"
+            table_html += f"<td class='nowrap-col' data-label='{col1_title}'><b>{r['기관']}</b></td>"
+            table_html += f"<td class='nowrap-col' data-label='{col2_title}'>{r['담당부서']}</td>"
+            table_html += f"<td class='nowrap-col' data-label='날짜'>{r['날짜']}</td>"
+            table_html += f"<td data-label='{col4_title}'><a href='{r['링크']}' target='_blank' rel='noreferrer noopener' class='dash-link'>{r['제목']}</a></td>"
             table_html += f"</tr>"
             
         table_html += "</tbody></table></div>"
