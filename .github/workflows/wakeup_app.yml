@@ -1,10 +1,10 @@
-name: Wake up Streamlit App (Every Morning 08:00 KST)
+name: Wake up Streamlit App (Every Morning 07:55 KST)
 
 on:
   schedule:
-    # UTC 23:00 = KST 매일 아침 08:00
-    - cron: '0 23 * * *'
-  workflow_dispatch: # 수동으로 즉시 실행해볼 수 있는 버튼 생성
+    # UTC 22:55 = KST 매일 아침 07:55
+    - cron: '55 22 * * *'
+  workflow_dispatch:
 
 jobs:
   wakeup:
@@ -12,6 +12,5 @@ jobs:
     steps:
       - name: Ping Streamlit App
         run: |
-          # 아래 URL을 실제 보유하신 Streamlit 앱 주소로 변경해주세요.
           curl -sL https://lsm230.streamlit.app > /dev/null || true
           echo "Streamlit 앱에 접속하여 깨우기를 완료했습니다."
