@@ -261,7 +261,7 @@ def fetch_ftc():
     except: pass
     return items
 
-# 🔥 행정안전부 맞춤 보도자료 수집기 (자바스크립트 링크 대응 파싱 포함)
+# 🔥 행정안전부 우측 3번째 칼럼(tds[-3]) 담당부서 추출 수정
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mois():
     items = []
@@ -278,7 +278,6 @@ def fetch_mois():
                     title = a_tag.text.strip()
                     raw_href = a_tag.get('href', '')
                     
-                    # nttId 추출 (스크립트 링크를 게시물 직접 접속 주소로 변환)
                     ntt_match = re.search(r"nttId=(\d+)|'(\d{5,})'", str(row) + raw_href)
                     if ntt_match:
                         ntt_id = ntt_match.group(1) if ntt_match.group(1) else ntt_match.group(2)
@@ -286,9 +285,9 @@ def fetch_mois():
                     else:
                         link = urljoin("https://www.mois.go.kr/frt/bbs/type010/", raw_href)
                         
-                    dept = tds[2].get_text(separator=' ', strip=True) if len(tds) >= 4 else "행정안전부"
-                    if re.search(r'^\d{4}[-.\/]', dept):
-                        dept = "행정안전부"
+                    # 우측 3번째 칼럼(tds[-3]) 추출
+                    dept_text = tds[-3].get_text(separator=' ', strip=True) if len(tds) >= 3 else "행정안전부"
+                    dept = dept_text if (dept_text and not re.search(r'^\d{4}[-.\/]', dept_text)) else "행정안전부"
                         
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
