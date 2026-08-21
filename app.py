@@ -296,7 +296,7 @@ def fetch_mois():
     except: pass
     return items
 
-# 🪖 국방부 파서 (제목 바로 다음 칸에서 담당부서 추출)
+# 🪖 국방부 파서 (td-etc 클래스에서 담당부서 직접 추출)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
@@ -307,18 +307,9 @@ def fetch_mnd():
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             for row in soup.select('table tr'):
+                a_tag = row.find('a')
                 tds = row.find_all('td')
-                if len(tds) >= 3:
-                    title_idx = -1
-                    a_tag = None
-                    for idx, td in enumerate(tds):
-                        a = td.find('a')
-                        if a and len(a.text.strip()) > 2:
-                            a_tag = a
-                            title_idx = idx
-                            break
-                    if not a_tag or title_idx == -1: continue
-                    
+                if a_tag and len(tds) >= 3:
                     title = a_tag.text.strip()
                     clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
                     if not clean_title or clean_title == "자세히보기":
@@ -327,12 +318,11 @@ def fetch_mnd():
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    # 제목 열(title_idx) 바로 다음 열(title_idx + 1)에서 담당부서 추출
-                    dept = "국방부"
-                    if title_idx + 1 < len(tds):
-                        d_cand = tds[title_idx + 1].get_text(strip=True)
-                        if d_cand and not re.search(r'20\d{2}', d_cand) and not d_cand.isdigit() and len(d_cand) < 25:
-                            dept = d_cand
+                    # td-etc 클래스 태그에서 담당부서 추출
+                    dept_tag = row.select_one('.td-etc')
+                    dept = dept_tag.get_text(separator=' ', strip=True) if dept_tag else "국방부"
+                    if not dept:
+                        dept = "국방부"
 
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
     except: pass
