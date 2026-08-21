@@ -11,7 +11,7 @@ import time
 # 공공기관 SSL 경고 메시지 비활성화
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# 페이지 탭 제목
+# 페이지 탭 제목 변경
 st.set_page_config(page_title="국회 법안·입법예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
 st.markdown("""
@@ -34,7 +34,7 @@ st.markdown("""
             background-color: #ffffff !important;
             border-bottom: 2px solid #cbd5e1 !important;
             flex-wrap: nowrap;
-            overflow-x: auto; 
+            overflow-x: auto; /* 모바일에서 탭 가로 스크롤 허용 */
         }
         div[data-baseweb="tab-list"] button[data-baseweb="tab"] {
             background-color: #f1f5f9 !important;
@@ -59,7 +59,7 @@ st.markdown("""
             font-weight: bold !important;
         }
         
-        /* 검색창 및 버튼 디자인 */
+        /* 검색창 디자인 */
         div[data-baseweb="input"] {
             background-color: #f8fafc !important;
             border: 1px solid #cbd5e1 !important;
@@ -80,12 +80,21 @@ st.markdown("""
             color: #ffffff !important;
         }
         
-        /* 기본 PC용 표 디자인 */
-        .table-responsive { width: 100%; margin-bottom: 1rem; }
+        /* 표 가로 스크롤 래퍼 (모바일 핵심) */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-bottom: 1rem;
+            border-radius: 6px;
+        }
+        
+        /* 표 기본 디자인 */
         .custom-table {
             width: 100%;
             border-collapse: collapse;
             background-color: #ffffff !important;
+            min-width: 600px; /* 모바일에서도 표가 너무 찌그러지지 않게 최소 너비 보장 */
         }
         .custom-table th {
             background-color: #f1f5f9 !important;
@@ -102,24 +111,30 @@ st.markdown("""
             color: #334155 !important;
             text-align: left;
         }
-        .nowrap-col { white-space: nowrap !important; }
-        .custom-table tr:hover { background-color: #f8fafc !important; }
+        .nowrap-col {
+            white-space: nowrap !important;
+        }
+        .custom-table tr:hover {
+            background-color: #f8fafc !important;
+        }
         .dash-link {
             color: #1d4ed8 !important;
             font-weight: bold !important;
             text-decoration: none !important;
             word-break: keep-all;
         }
-        .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
+        .dash-link:hover {
+            text-decoration: underline !important;
+            color: #1e40af !important;
+        }
         
-        /* 📱 스마트폰(모바일) 전용 카드형 UI 전환 (가로 768px 이하) */
+        /* 📱 스마트폰 모바일 화면 전용 (가로 768px 이하) 카드형 전환 */
         @media screen and (max-width: 768px) {
             h1 { font-size: 1.4rem !important; line-height: 1.4 !important; }
             p { font-size: 0.85rem !important; }
             
-            /* 가로 스크롤 제거 후 카드 블록 형태로 전환 */
             .custom-table, .custom-table tbody { display: block; width: 100%; }
-            .custom-table thead { display: none; } /* 기존 표 헤더는 가림 */
+            .custom-table thead { display: none; }
             
             .custom-table tr {
                 display: block;
@@ -136,8 +151,6 @@ st.markdown("""
                 padding: 6px 0;
                 font-size: 14px;
             }
-            
-            /* data-label 속성값을 가져와서 컬럼 제목처럼 달아줌 */
             .custom-table td::before {
                 content: attr(data-label); 
                 font-size: 11px;
@@ -150,7 +163,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 📌 타이틀
+# 📌 변경된 타이틀 및 줄바꿈 적용
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #475569; margin-bottom: 1.5rem;'>국회 상임위 법안 / 하위법령 입법예고 / 국토부, 기후부, 행안부, 국방부, 공정위, 산림청, 서울시 보도자료 실시간 모니터링</p>", unsafe_allow_html=True)
 
@@ -173,7 +186,7 @@ def fetch_molit_dept_parallel(item):
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_molit():
     items = []
-    session = requests.Session() # 세션 풀링 적용 (속도 최적화)
+    session = requests.Session()
     session.headers.update(HEADERS)
     try:
         for page in range(1, 4):
@@ -355,7 +368,7 @@ def fetch_mnd():
     for page in range(1, 4):
         try:
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = session.get(url, timeout=10, verify=False)
+            resp = session.get(url, timeout=12, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
@@ -377,38 +390,60 @@ def fetch_mnd():
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
                     
-                    items.append({"기관": "국방부", "담당부서": "국방부", "날짜": date, "제목": clean_title, "링크": link})
+                    dept = "국방부"
+                    etc_tds = row.find_all('td', class_=re.compile(r'td-etc'))
+                    for td in etc_tds:
+                        t_text = td.get_text(strip=True)
+                        if t_text and not re.match(r'^\d+$', t_text) and not re.search(r'20\d{2}', t_text):
+                            dept = t_text
+                            break
+                            
+                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
                 except Exception:
                     continue 
         except Exception:
             continue
     return items
 
+# 💡 하위법령 입법예고 + 행정규칙 행정예고 병합 수집 로직
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
     session = requests.Session()
     session.headers.update(HEADERS)
-    try:
-        url = "https://opinion.lawmaking.go.kr/gns/elm/stty/lst"
-        resp = session.get(url, timeout=6, verify=False)
-        resp.encoding = 'utf-8'
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        for row in soup.select('table tbody tr'):
-            a_tag = row.find('a')
-            tds = row.find_all('td')
-            if a_tag and len(tds) >= 4:
-                title = a_tag.text.strip()
-                link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
-                dept = tds[1].get_text(separator=' ', strip=True)
-                date = tds[-1].get_text(separator=' ', strip=True)
-                
-                date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', date)
-                clean_date = date_match.group(1).replace('.', '-') if date_match else date
-                
-                items.append({"기관": "⚖️ 하위법령 입법예고", "담당부서": dept, "날짜": clean_date, "제목": title, "링크": link})
-    except: pass
+    
+    # 두 개의 URL과 각각의 태그를 지정하여 순회
+    targets = [
+        ("https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "입법예고"),
+        ("https://opinion.lawmaking.go.kr/gcom/ogLmPp", "행정예고")
+    ]
+    
+    for url, tag in targets:
+        try:
+            resp = session.get(url, timeout=8, verify=False)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for row in soup.select('table tbody tr'):
+                a_tag = row.find('a')
+                tds = row.find_all('td')
+                if a_tag and len(tds) >= 4:
+                    title = a_tag.text.strip()
+                    # 제목 앞에 태그를 붙여 직관적으로 알 수 있게 함
+                    display_title = f"[{tag}] {title}"
+                    
+                    link = urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
+                    dept = tds[1].get_text(separator=' ', strip=True)
+                    date = tds[-1].get_text(separator=' ', strip=True)
+                    
+                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', date)
+                    clean_date = date_match.group(1).replace('.', '-') if date_match else date
+                    
+                    # 기관명과 탭에 들어갈 이름을 '⚖️ 정부 입법·행정예고'로 통일
+                    items.append({"기관": "⚖️ 정부 입법·행정예고", "담당부서": dept, "날짜": clean_date, "제목": display_title, "링크": link})
+        except: 
+            pass
+            
     return items
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -453,6 +488,7 @@ def fetch_assembly_bills():
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
+    # 📌 버튼 이름 새로고침으로 변경
     if st.button("🔄 최신 데이터 새로고침"):
         st.cache_data.clear()
         st.rerun()
@@ -500,7 +536,7 @@ if not df_total.empty:
     tabs = st.tabs([
         "전체 보기", 
         "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
-        "⚖️ 하위법령 입법예고", 
+        "⚖️ 정부 입법·행정예고", 
         "국토교통부", "기후에너지환경부", "행정안전부", "국방부", "공정거래위원회", "산림청", "서울특별시"
     ])
 
@@ -514,13 +550,12 @@ if not df_total.empty:
         if "📜" in tab_name:
             col1_title, col2_title, col4_title = "상임위 구분", "대표발의자", "법안명"
         elif "⚖️" in tab_name:
-            col1_title, col2_title, col4_title = "구분", "소관부처", "하위법령 입법예고명"
+            col1_title, col2_title, col4_title = "구분", "소관부처", "입법·행정예고명"
         elif tab_name == "전체 보기":
             col1_title, col2_title, col4_title = "기관 / 구분", "담당부서 / 발의자", "보도자료 제목 / 법안·입법예고명"
         else:
             col1_title, col2_title, col4_title = "기관명", "담당부서", "보도자료 제목"
         
-        # 💡 HTML 렌더링 시 모바일 카드뷰의 제목으로 쓰일 data-label 속성 삽입
         table_html = "<div class='table-responsive'><table class='custom-table'><thead><tr>"
         table_html += f"<th style='width: 150px;'>{col1_title}</th>"
         table_html += f"<th style='width: 160px;'>{col2_title}</th>"
@@ -543,7 +578,7 @@ if not df_total.empty:
     with tabs[1]: render_custom_table(df_total[df_total['기관'] == '📜 국토교통위원회'], "📜 국토교통위원회")
     with tabs[2]: render_custom_table(df_total[df_total['기관'] == '📜 기후에너지환경노동위원회'], "📜 기후에너지환경노동위원회")
     with tabs[3]: render_custom_table(df_total[df_total['기관'] == '📜 정무위원회'], "📜 정무위원회")
-    with tabs[4]: render_custom_table(df_total[df_total['기관'] == '⚖️ 하위법령 입법예고'], "⚖️ 하위법령 입법예고")
+    with tabs[4]: render_custom_table(df_total[df_total['기관'] == '⚖️ 정부 입법·행정예고'], "⚖️ 정부 입법·행정예고")
     with tabs[5]: render_custom_table(df_total[df_total['기관'] == '국토교통부'], "국토교통부")
     with tabs[6]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'], "기후에너지환경부")
     with tabs[7]: render_custom_table(df_total[df_total['기관'] == '행정안전부'], "행정안전부")
