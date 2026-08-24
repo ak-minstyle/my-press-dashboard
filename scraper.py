@@ -143,7 +143,7 @@ def fetch_mois():
     except: pass
     return items
 
-# 🛠️ 국방부 전용 완전 정제 파서
+# 🎖️ 국토부 스타일로 맞춘 국방부 파서
 def fetch_mnd():
     items = []
     try:
@@ -153,49 +153,27 @@ def fetch_mnd():
             resp = requests.get(url, headers=mnd_headers, timeout=TIMEOUT, verify=False)
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             
-            # 게시판 본문 표 행(tbody tr) 선택
-            rows = soup.select('table tbody tr') or soup.select('.board_list tbody tr')
-            
-            for row in rows:
-                tds = row.find_all('td')
-                if len(tds) < 3:
-                    continue
-                
-                a_tag = row.find('a')
-                if not a_tag:
-                    continue
-                
-                raw_href = str(a_tag.get('href', ''))
-                onclick_attr = str(a_tag.get('onclick', ''))
-                combined = raw_href + " " + onclick_attr
-                
-                # 게시글 고유 ID(nttId)가 존재하는 링크만 허용 (메뉴 링크 100% 차단)
-                ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', combined)
-                if not ntt_m:
-                    continue
-                
-                ntt_id = ntt_m.group(1) or ntt_m.group(2)
-                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_id}"
-                
-                clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
-                if len(clean_title) < 3 or any(kw in clean_title for kw in ["바로가기", "주요메뉴", "사이트맵", "검색", "전체보기"]):
-                    continue
-                
-                # 날짜 필수 조건 (YYYY-MM-DD)
-                date_match = re.search(r'(202\d)[-.\/](\d{2})[-.\/](\d{2})', row.text)
-                if not date_match:
-                    continue
-                date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
-                
-                dept = "국방부"
-                for td in tds:
-                    t_text = td.get_text(strip=True)
-                    if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
-                        if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실", "본부", "청"]):
-                            dept = t_text
-                            break
-                            
-                items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
+            # 국토부처럼 표 내부 tr만 선택
+            for row in soup.select('table tbody tr'):
+                a_tag, tds = row.find('a'), row.find_all('td')
+                if a_tag and len(tds) >= 4:
+                    raw_href = str(a_tag.get('href', ''))
+                    onclick_attr = str(a_tag.get('onclick', ''))
+                    ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + " " + onclick_attr)
+                    if not ntt_m: continue
+                    
+                    link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2)}"
+                    date_match = re.search(r'(202\d[-.\/]\d{2}[-.\/]\d{2})', row.text)
+                    date = date_match.group(1).replace('.', '-') if date_match else tds[-2].text.strip()
+                    dept = tds[1].text.strip() if len(tds) >= 5 else "국방부"
+                    
+                    items.append({
+                        "기관": "국방부",
+                        "담당부서": dept if dept else "국방부",
+                        "날짜": date,
+                        "제목": a_tag.text.strip(),
+                        "링크": link
+                    })
     except: pass
     return items
 
@@ -246,7 +224,7 @@ def main():
     if os.path.exists(DATA_FILE):
         df_old = pd.read_csv(DATA_FILE)
         
-        # 🔥 기존 CSV에 들어있던 이전 국방부 데이터(메뉴 찌꺼기)를 전부 밀어버림
+        # 기존 국방부 오염 데이터 밀어버리기
         df_old = df_old[df_old['기관'] != '국방부']
         df_old = df_old[~df_old['제목'].str.contains("🚨", na=False)]
         
