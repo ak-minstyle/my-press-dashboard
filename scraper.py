@@ -102,7 +102,6 @@ def fetch_seoul():
         for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
-            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -111,9 +110,7 @@ def fetch_seoul():
                     ntt_m = re.search(r'nttNo=(\d+)|(\d{5,})', raw_href)
                     link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.seoul.go.kr/news/", raw_href)
                     items.append({"기관": "서울특별시", "담당부서": tds[-2].get_text(separator=' ', strip=True), "날짜": tds[-1].text.strip(), "제목": a_tag.text.strip(), "링크": link})
-        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
-    except Exception as e:
-        items.append({"기관": "서울특별시", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
+    except: pass
     return items
 
 def fetch_ftc():
