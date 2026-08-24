@@ -11,10 +11,6 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
-
-# 🔥 문제의 원인 해결: 환경변수 싹 지우고 원래 쓰시던 키로 하드코딩!
-ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
-
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TIMEOUT = 8 
@@ -208,41 +204,16 @@ def fetch_sub_legislation():
     except: pass
     return items
 
-def fetch_assembly_bills():
-    bills = []
-    try:
-        url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-        # 🔥 2. 원래 되던 원본 그대로 API 요청 (복잡하게 꼬아둔 것 다 제거)
-        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}
-        resp = requests.get(url, params=params, timeout=15, verify=False)
-        data = resp.json()
-        if "nzmimeepazxkubdpn" in data:
-            for r in data["nzmimeepazxkubdpn"][1]["row"]:
-                bill_id, comm, title = r.get("BILL_ID", ""), r.get("COMMITTEE", "") or "", r.get("BILL_NAME", "")
-                if not bill_id: continue
-                link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
-                
-                is_kokto = "국토" in comm or (not comm and any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "부동산", "교통", "물류"]))
-                is_hwan = any(kw in comm for kw in ["환경", "노동", "기후"]) or (not comm and any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]))
-                is_jungmu = "정무" in comm or (not comm and any(kw in title for kw in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]))
-                
-                base = {"담당부서": f"발의: {r.get('PROPOSER', '국회의원')}", "날짜": r.get("PROPOSE_DT", ""), "제목": title, "링크": link}
-                if is_kokto: bills.append({"기관": "📜 국토교통위원회", **base})
-                elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", **base})
-                elif is_jungmu: bills.append({"기관": "📜 정무위원회", **base})
-    except: pass
-    return bills
-
-# -------------------------------------------------------------
 
 def main():
+    # 국회 API(fetch_assembly_bills)는 제거하고 나머지 웹 크롤링 타겟만 배치
     fetch_functions = [
-        fetch_assembly_bills, fetch_sub_legislation, fetch_molit, 
-        fetch_mcee, fetch_forest, fetch_seoul, fetch_ftc, fetch_mois, fetch_mnd
+        fetch_sub_legislation, fetch_molit, fetch_mcee, fetch_forest, 
+        fetch_seoul, fetch_ftc, fetch_mois, fetch_mnd
     ]
     
     all_data = []
-    with ThreadPoolExecutor(max_workers=9) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(func) for func in fetch_functions]
         for future in as_completed(futures):
             res = future.result()
