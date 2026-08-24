@@ -21,6 +21,8 @@ st.markdown("""
         div[data-baseweb="input"] { background-color: #f8fafc !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; }
         .stButton > button { background-color: #f1f5f9 !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; font-weight: bold !important; }
         .stButton > button:hover { background-color: #2563eb !important; color: #ffffff !important; }
+        
+        /* 데스크톱 기본 테이블 스타일 */
         .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table { width: 100%; border-collapse: collapse; background-color: #ffffff !important; }
         .custom-table th { background-color: #f1f5f9 !important; color: #0f172a !important; font-weight: bold; padding: 12px; border-bottom: 2px solid #cbd5e1; text-align: left; white-space: nowrap !important; }
@@ -29,6 +31,54 @@ st.markdown("""
         .custom-table tr:hover { background-color: #f8fafc !important; }
         .dash-link { color: #1d4ed8 !important; font-weight: bold !important; text-decoration: none !important; word-break: keep-all; }
         .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
+
+        /* 📱 스마트폰/모바일 환경 (768px 이하) 카드 UI 변환 */
+        @media screen and (max-width: 768px) {
+            .custom-table, .custom-table thead, .custom-table tbody, .custom-table th, .custom-table td, .custom-table tr {
+                display: block !important;
+            }
+            .custom-table thead tr {
+                position: absolute !important;
+                top: -9999px !important;
+                left: -9999px !important;
+            }
+            .custom-table tr {
+                margin-bottom: 12px !important;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 10px !important;
+                padding: 12px 14px !important;
+                background-color: #ffffff !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03) !important;
+            }
+            .custom-table td {
+                border: none !important;
+                border-bottom: 1px solid #f1f5f9 !important;
+                position: relative !important;
+                padding-left: 38% !important;
+                padding-top: 6px !important;
+                padding-bottom: 6px !important;
+                text-align: left !important;
+                white-space: normal !important;
+                word-break: break-word !important;
+                font-size: 14px !important;
+            }
+            .custom-table td:last-child {
+                border-bottom: none !important;
+                padding-top: 8px !important;
+            }
+            .custom-table td::before {
+                position: absolute !important;
+                left: 10px !important;
+                top: 6px !important;
+                width: 32% !important;
+                padding-right: 8px !important;
+                white-space: nowrap !important;
+                font-weight: bold !important;
+                color: #64748b !important;
+                content: attr(data-label) !important;
+                font-size: 13px !important;
+            }
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -36,7 +86,6 @@ st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; ma
 
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
-# 1. 깃허브가 저장해둔 보도자료+입법예고 CSV 읽기
 @st.cache_data(ttl=60)
 def load_csv_data():
     if not os.path.exists("data.csv"):
@@ -45,7 +94,6 @@ def load_csv_data():
     df.fillna("", inplace=True)
     return df
 
-# 2. 국회 법률안 API만 화면 띄울 때 즉시 호출
 @st.cache_data(ttl=600)
 def fetch_live_assembly_bills():
     bills = []
@@ -68,7 +116,7 @@ def fetch_live_assembly_bills():
                 if is_kokto: bills.append({"기관": "📜 국토교통위원회", **base})
                 elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", **base})
                 elif is_jungmu: bills.append({"기관": "📜 정무위원회", **base})
-    except Exception as e:
+    except Exception:
         pass
     return pd.DataFrame(bills)
 
@@ -78,14 +126,12 @@ with col_btn:
         st.cache_data.clear()
         st.rerun()
 
-# 두 데이터 합치기
 df_csv = load_csv_data()
 df_bills = fetch_live_assembly_bills()
-
 df_total = pd.concat([df_csv, df_bills], ignore_index=True)
 
 if df_total.empty:
-    st.info("데이터 수집 로봇이 깃허브에서 작동 중입니다. 잠시 후 새로고침 해주세요.")
+    st.info("데이터 수집 로봇이 작동 중입니다. 잠시 후 새로고침 해주세요.")
 else:
     df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
     df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
