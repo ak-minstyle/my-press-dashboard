@@ -22,6 +22,25 @@ st.markdown("""
         .stButton > button { background-color: #f1f5f9 !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; font-weight: bold !important; }
         .stButton > button:hover { background-color: #2563eb !important; color: #ffffff !important; }
         
+        /* 상단 타이틀 정렬 및 반응형 CSS */
+        .header-box {
+            text-align: center;
+            padding: 10px 0 20px 0;
+            word-break: keep-all;
+            line-height: 1.4;
+        }
+        .header-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #0f172a !important;
+            margin-bottom: 6px;
+        }
+        .header-subtitle {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #2563eb !important;
+        }
+
         /* 데스크톱 기본 테이블 스타일 */
         .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table { width: 100%; border-collapse: collapse; background-color: #ffffff !important; }
@@ -32,8 +51,10 @@ st.markdown("""
         .dash-link { color: #1d4ed8 !important; font-weight: bold !important; text-decoration: none !important; word-break: keep-all; }
         .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
 
-        /* 📱 스마트폰 모바일 카드 UI (라벨 상단 세로 배치로 겹침 완전 방지) */
+        /* 📱 스마트폰 모바일 카드 UI */
         @media screen and (max-width: 768px) {
+            .header-title { font-size: 1.3rem; }
+            .header-subtitle { font-size: 1.1rem; }
             .custom-table, .custom-table thead, .custom-table tbody, .custom-table th, .custom-table td, .custom-table tr {
                 display: block !important;
             }
@@ -74,7 +95,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
+st.markdown("""
+    <div class="header-box">
+        <div class="header-title">📜 국회 발의 법안 · ⚖️ 정부 입법·행정예고</div>
+        <div class="header-subtitle">📰 정부·지자체 보도자료 통합 대시보드</div>
+    </div>
+""", unsafe_allow_html=True)
 
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
