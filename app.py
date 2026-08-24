@@ -32,31 +32,27 @@ st.markdown("""
         .dash-link { color: #1d4ed8 !important; font-weight: bold !important; text-decoration: none !important; word-break: keep-all; }
         .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
 
-        /* 📱 스마트폰/모바일 환경 (768px 이하) 카드 UI 변환 */
+        /* 📱 스마트폰 모바일 카드 UI (라벨 상단 세로 배치로 겹침 완전 방지) */
         @media screen and (max-width: 768px) {
             .custom-table, .custom-table thead, .custom-table tbody, .custom-table th, .custom-table td, .custom-table tr {
                 display: block !important;
             }
-            .custom-table thead tr {
-                position: absolute !important;
-                top: -9999px !important;
-                left: -9999px !important;
+            .custom-table thead {
+                display: none !important;
             }
             .custom-table tr {
-                margin-bottom: 12px !important;
+                margin-bottom: 14px !important;
                 border: 1px solid #cbd5e1 !important;
                 border-radius: 10px !important;
                 padding: 12px 14px !important;
                 background-color: #ffffff !important;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03) !important;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04) !important;
             }
             .custom-table td {
                 border: none !important;
                 border-bottom: 1px solid #f1f5f9 !important;
-                position: relative !important;
-                padding-left: 38% !important;
-                padding-top: 6px !important;
-                padding-bottom: 6px !important;
+                position: static !important;
+                padding: 6px 0 !important;
                 text-align: left !important;
                 white-space: normal !important;
                 word-break: break-word !important;
@@ -64,19 +60,15 @@ st.markdown("""
             }
             .custom-table td:last-child {
                 border-bottom: none !important;
-                padding-top: 8px !important;
+                padding-bottom: 0 !important;
             }
             .custom-table td::before {
-                position: absolute !important;
-                left: 10px !important;
-                top: 6px !important;
-                width: 32% !important;
-                padding-right: 8px !important;
-                white-space: nowrap !important;
+                content: attr(data-label) !important;
+                display: block !important;
                 font-weight: bold !important;
                 color: #64748b !important;
-                content: attr(data-label) !important;
-                font-size: 13px !important;
+                font-size: 12px !important;
+                margin-bottom: 2px !important;
             }
         }
     </style>
