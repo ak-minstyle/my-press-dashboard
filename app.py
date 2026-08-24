@@ -54,7 +54,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 TIMEOUT = 6 # 각 요청당 최대 대기 시간 제한
 
-# 🔥 국토부 개별 게시글 담당과 고속 파서 (스레드 충돌 방지를 위해 독립 요청 사용)
+# 🔥 국토부 개별 게시글 담당과 고속 파서
 def fetch_molit_detail(item):
     try:
         resp = requests.get(item['링크'], headers=HEADERS, timeout=TIMEOUT, verify=False)
@@ -72,7 +72,6 @@ def fetch_molit_detail(item):
 def fetch_molit():
     items = []
     try:
-        # 1. 목록 3페이지 수집
         for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
@@ -84,13 +83,13 @@ def fetch_molit():
                 if a_tag and len(tds) >= 4:
                     items.append({
                         "기관": "국토교통부", 
-                        "담당부서": "국토교통부", # 기본값 세팅
+                        "담당부서": "국토교통부", 
                         "날짜": tds[3].text.strip(), 
                         "제목": a_tag.text.strip(), 
                         "링크": "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']
                     })
         
-        # 2. 🔥 수집된 모든 게시글(약 30~40개)의 담당과를 20개의 스레드로 동시 폭격 (초고속 스캔)
+        # 담당부서 파싱을 위한 20-스레드 동시 폭격
         with ThreadPoolExecutor(max_workers=20) as executor:
             items = list(executor.map(fetch_molit_detail, items))
     except: pass
@@ -157,7 +156,7 @@ def fetch_seoul():
     items = []
     seen_links = set()
     try:
-        for page in range(1, 6): # 정확도 100% 원칙에 따라 5페이지 전부 파싱 유지
+        for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
             resp.encoding = 'utf-8'
@@ -243,6 +242,80 @@ def fetch_mois():
     except: pass
     return items
 
+# 🔥 살려둔 국방부 파서 (가장 강력한 WAF 우회 헤더 적용)
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_mnd():
+    items = []
+    mnd_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Referer": "https://www.mnd.go.kr/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+    
+    try:
+        for page in range(1, 4):
+            url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
+            resp = requests.get(url, headers=mnd_headers, timeout=TIMEOUT, verify=False)
+            resp.encoding = 'utf-8'
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            for row in soup.find_all(['tr', 'li']):
+                try:
+                    a_tag = row.find('a')
+                    if not a_tag: continue
+                    
+                    title = a_tag.get_text(strip=True)
+                    clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', title).strip()
+                    if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
+                        continue
+                        
+                    raw_href = a_tag.get('href', '') or ''
+                    onclick_attr = a_tag.get('onclick', '') or ''
+                    
+                    link = ""
+                    ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + onclick_attr)
+                    
+                    if ntt_m:
+                        ntt_id = ntt_m.group(1) or ntt_m.group(2)
+                        link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_id}"
+                    elif raw_href and not raw_href.startswith('#') and 'javascript' not in raw_href.lower():
+                        link = urljoin("https://www.mnd.go.kr", raw_href)
+                        
+                    if not link:
+                        continue 
+                        
+                    date_match = re.search(r'(202\d)\s*[-.\/]\s*(\d{2})\s*[-.\/]\s*(\d{2})', row.text)
+                    date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}" if date_match else "날짜 미표기"
+                    
+                    dept = "국방부"
+                    for td in row.find_all(['td', 'span']):
+                        t_text = td.get_text(strip=True)
+                        if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
+                            if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실"]):
+                                dept = t_text
+                                break
+                                
+                    items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
+                except Exception:
+                    continue 
+    except Exception:
+        pass
+        
+    unique_items = []
+    seen = set()
+    for item in items:
+        if item['제목'] not in seen:
+            seen.add(item['제목'])
+            unique_items.append(item)
+            
+    return unique_items
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
@@ -322,22 +395,21 @@ with col_btn:
 
 progress_bar = st.progress(0, text="초고속 병렬 데이터 수집 중...")
 
-# 국방부 제외 8개 기관 동시 수집 시작!
+# 국방부 포함 9개 기관 동시 수집
 fetch_functions = [
     fetch_assembly_bills, fetch_sub_legislation, fetch_molit, 
-    fetch_mcee, fetch_forest, fetch_seoul, fetch_ftc, fetch_mois
+    fetch_mcee, fetch_forest, fetch_seoul, fetch_ftc, fetch_mois, fetch_mnd
 ]
 
 all_data = []
-# 메인 8개 부처를 8개의 스레드가 각자 맡아서 동시에 데이터를 당겨옵니다.
-with ThreadPoolExecutor(max_workers=8) as executor:
+with ThreadPoolExecutor(max_workers=9) as executor:
     futures = [executor.submit(func) for func in fetch_functions]
     for i, future in enumerate(as_completed(futures)):
         try:
             result = future.result()
             if result: all_data.extend(result)
         except Exception: pass
-        progress_bar.progress(int((i + 1) / 8 * 100), text=f"수집 중... ({i+1}/8 완료)")
+        progress_bar.progress(int((i + 1) / 9 * 100), text=f"수집 중... ({i+1}/9 완료)")
 
 progress_bar.empty()
 
@@ -352,9 +424,10 @@ if not df_total.empty:
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
 
+    # 국방부 탭 추가 복구 (인덱스 9)
     tabs = st.tabs([
         "전체 보기", "📜 국토교통위원회", "📜 기후에너지환경노동위원회", "📜 정무위원회", 
-        "⚖️ 입법예고", "⚖️ 행정예고", "국토교통부", "기후에너지환경부", "행정안전부", "공정거래위원회", "산림청", "서울특별시"
+        "⚖️ 입법예고", "⚖️ 행정예고", "국토교통부", "기후에너지환경부", "행정안전부", "국방부", "공정거래위원회", "산림청", "서울특별시"
     ])
 
     def render_custom_table(filtered_df, tab_name="전체 보기"):
@@ -384,8 +457,9 @@ if not df_total.empty:
     with tabs[6]: render_custom_table(df_total[df_total['기관'] == '국토교통부'], "국토교통부")
     with tabs[7]: render_custom_table(df_total[df_total['기관'] == '기후에너지환경부'], "기후에너지환경부")
     with tabs[8]: render_custom_table(df_total[df_total['기관'] == '행정안전부'], "행정안전부")
-    with tabs[9]: render_custom_table(df_total[df_total['기관'] == '공정거래위원회'], "공정거래위원회")
-    with tabs[10]: render_custom_table(df_total[df_total['기관'] == '산림청'], "산림청")
-    with tabs[11]: render_custom_table(df_total[df_total['기관'] == '서울특별시'], "서울특별시")
+    with tabs[9]: render_custom_table(df_total[df_total['기관'] == '국방부'], "국방부")
+    with tabs[10]: render_custom_table(df_total[df_total['기관'] == '공정거래위원회'], "공정거래위원회")
+    with tabs[11]: render_custom_table(df_total[df_total['기관'] == '산림청'], "산림청")
+    with tabs[12]: render_custom_table(df_total[df_total['기관'] == '서울특별시'], "서울특별시")
 else:
     st.error("데이터 수집 중 오류가 발생했습니다.")
