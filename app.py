@@ -36,7 +36,7 @@ st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; ma
 
 ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
 
-# 트랙 1: 깃허브 로봇이 만든 CSV 데이터 불러오기
+# 1. 깃허브가 저장해둔 보도자료+입법예고 CSV 읽기
 @st.cache_data(ttl=60)
 def load_csv_data():
     if not os.path.exists("data.csv"):
@@ -45,8 +45,8 @@ def load_csv_data():
     df.fillna("", inplace=True)
     return df
 
-# 트랙 2: 국회 API 실시간 다이렉트 호출 (속도가 빠르므로 화면 단에서 처리)
-@st.cache_data(ttl=600)  # 10분마다 갱신
+# 2. 국회 법률안 API만 화면 띄울 때 즉시 호출
+@st.cache_data(ttl=600)
 def fetch_live_assembly_bills():
     bills = []
     try:
@@ -69,28 +69,28 @@ def fetch_live_assembly_bills():
                 elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", **base})
                 elif is_jungmu: bills.append({"기관": "📜 정무위원회", **base})
     except Exception as e:
-        st.error(f"국회 실시간 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+        pass
     return pd.DataFrame(bills)
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
-    if st.button("🔄 화면 새로고침"):
+    if st.button("🔄 화면 새로고침 (즉시로딩)"):
         st.cache_data.clear()
         st.rerun()
 
-# 두 트랙의 데이터 합치기
+# 두 데이터 합치기
 df_csv = load_csv_data()
 df_bills = fetch_live_assembly_bills()
 
 df_total = pd.concat([df_csv, df_bills], ignore_index=True)
 
 if df_total.empty:
-    st.info("데이터가 없습니다. 수집 로봇 작동을 기다려주세요.")
+    st.info("데이터 수집 로봇이 깃허브에서 작동 중입니다. 잠시 후 새로고침 해주세요.")
 else:
-    # 중복 제거 및 날짜순 정렬
     df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
     df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
     df_total = df_total.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
+    df_total.fillna("", inplace=True)
 
     search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
