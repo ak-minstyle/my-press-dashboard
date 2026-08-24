@@ -11,7 +11,8 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
-ASSEMBLY_API_KEY = os.environ.get("ASSEMBLY_API_KEY", "4771fb319fc6421c96f412002daa0e91")
+# API 키가 비어있을 경우를 대비해 확실하게 기본키 할당
+ASSEMBLY_API_KEY = os.environ.get("ASSEMBLY_API_KEY") or "4771fb319fc6421c96f412002daa0e91"
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TIMEOUT = 8 
@@ -26,7 +27,6 @@ def send_telegram(message):
     except:
         pass
 
-# ----------------- 파싱 함수 모음 (이전 코드와 완전 동일) -----------------
 def fetch_molit_detail(item):
     try:
         resp = requests.get(item['링크'], headers=HEADERS, timeout=TIMEOUT, verify=False)
@@ -210,7 +210,8 @@ def fetch_assembly_bills():
     bills = []
     try:
         url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-        resp = requests.get(url, params={"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}, timeout=TIMEOUT, verify=False)
+        # 국회 API 서버가 느릴 수 있으므로 타임아웃을 15초로 늘림
+        resp = requests.get(url, params={"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}, timeout=15, verify=False)
         data = resp.json()
         if "nzmimeepazxkubdpn" in data:
             for r in data["nzmimeepazxkubdpn"][1]["row"]:
@@ -220,7 +221,8 @@ def fetch_assembly_bills():
                 
                 is_kokto = "국토" in comm or (not comm and any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "부동산", "교통", "물류"]))
                 is_hwan = any(kw in comm for kw in ["환경", "노동", "기후"]) or (not comm and any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]))
-                is_jungmu = "정무" in comm or (not comm and any(kw in title for 파 in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]))
+                # 🔥 '파' 라고 적혀있던 오타를 'kw'로 정확히 수정 완료
+                is_jungmu = "정무" in comm or (not comm and any(kw in title for kw in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]))
                 
                 base = {"담당부서": f"발의: {r.get('PROPOSER', '국회의원')}", "날짜": r.get("PROPOSE_DT", ""), "제목": title, "링크": link}
                 if is_kokto: bills.append({"기관": "📜 국토교통위원회", **base})
@@ -252,16 +254,13 @@ def main():
     df_new['sort_date'] = pd.to_datetime(df_new['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
     df_new = df_new.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
     
-    # 텔레그램 알림 로직 (기존 파일과 비교하여 새로운 항목 찾기)
     DATA_FILE = "data.csv"
     if os.path.exists(DATA_FILE):
         df_old = pd.read_csv(DATA_FILE)
-        # '링크'를 고유값으로 비교하여 새로운 항목 추출
         existing_links = set(df_old['링크'].astype(str))
         new_items = df_new[~df_new['링크'].astype(str).isin(existing_links)]
         
         if not new_items.empty:
-            # 알림 폭탄 방지를 위해 한 번에 최대 5개까지만 발송
             for _, row in new_items.head(5).iterrows():
                 msg = f"🔔 <b>[새 업데이트] {row['기관']}</b>\n"
                 msg += f"부서: {row['담당부서']}\n"
@@ -272,7 +271,6 @@ def main():
             if len(new_items) > 5:
                 send_telegram(f"<i>...외 {len(new_items) - 5}건의 새로운 업데이트가 있습니다.</i>")
 
-    # 새 데이터 덮어쓰기 저장
     df_new.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
 if __name__ == "__main__":
