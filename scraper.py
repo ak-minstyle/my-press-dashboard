@@ -11,8 +11,7 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
-# API 키가 비어있을 경우를 대비해 확실하게 기본키 할당
-ASSEMBLY_API_KEY = os.environ.get("ASSEMBLY_API_KEY") or "4771fb319fc6421c96f412002daa0e91"
+ASSEMBLY_API_KEY = os.environ.get("ASSEMBLY_API_KEY", "4771fb319fc6421c96f412002daa0e91")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TIMEOUT = 8 
@@ -206,12 +205,14 @@ def fetch_sub_legislation():
     except: pass
     return items
 
+# 🔥 문제의 국회 API 원상복구 (어떤 커스텀 헤더도 안 넣음!)
 def fetch_assembly_bills():
     bills = []
     try:
         url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-        # 국회 API 서버가 느릴 수 있으므로 타임아웃을 15초로 늘림
-        resp = requests.get(url, params={"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}, timeout=15, verify=False)
+        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
+        # headers를 완전히 빼버려서 처음 잘 될 때의 코드로 100% 동일하게 롤백
+        resp = requests.get(url, params=params, timeout=15, verify=False)
         data = resp.json()
         if "nzmimeepazxkubdpn" in data:
             for r in data["nzmimeepazxkubdpn"][1]["row"]:
@@ -221,7 +222,6 @@ def fetch_assembly_bills():
                 
                 is_kokto = "국토" in comm or (not comm and any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "부동산", "교통", "물류"]))
                 is_hwan = any(kw in comm for kw in ["환경", "노동", "기후"]) or (not comm and any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]))
-                # 🔥 '파' 라고 적혀있던 오타를 'kw'로 정확히 수정 완료
                 is_jungmu = "정무" in comm or (not comm and any(kw in title for kw in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]))
                 
                 base = {"담당부서": f"발의: {r.get('PROPOSER', '국회의원')}", "날짜": r.get("PROPOSE_DT", ""), "제목": title, "링크": link}
@@ -262,12 +262,8 @@ def main():
         
         if not new_items.empty:
             for _, row in new_items.head(5).iterrows():
-                msg = f"🔔 <b>[새 업데이트] {row['기관']}</b>\n"
-                msg += f"부서: {row['담당부서']}\n"
-                msg += f"제목: <a href='{row['링크']}'>{row['제목']}</a>\n"
-                msg += f"날짜: {row['날짜']}"
+                msg = f"🔔 <b>[새 업데이트] {row['기관']}</b>\n부서: {row['담당부서']}\n제목: <a href='{row['링크']}'>{row['제목']}</a>\n날짜: {row['날짜']}"
                 send_telegram(msg)
-                
             if len(new_items) > 5:
                 send_telegram(f"<i>...외 {len(new_items) - 5}건의 새로운 업데이트가 있습니다.</i>")
 
