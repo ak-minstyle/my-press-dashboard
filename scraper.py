@@ -40,6 +40,7 @@ def fetch_molit():
         for page in range(1, 4):
             url = f"https://www.molit.go.kr/USR/NEWS/m_71/lst.jsp?cate=1&search_page={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -47,7 +48,9 @@ def fetch_molit():
                     items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": tds[3].text.strip(), "제목": a_tag.text.strip(), "링크": "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']})
         with ThreadPoolExecutor(max_workers=10) as executor:
             items = list(executor.map(fetch_molit_detail, items))
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "국토교통부", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_mcee():
@@ -56,12 +59,15 @@ def fetch_mcee():
         for page in range(1, 4):
             url = f"https://www.mcee.go.kr/home/web/index.do?menuId=10598&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
                 if a_tag and len(tds) >= 5:
                     items.append({"기관": "기후에너지환경부", "담당부서": tds[-4].get_text(separator=' ', strip=True), "날짜": tds[-2].text.strip(), "제목": a_tag.text.strip(), "링크": urljoin("https://www.mcee.go.kr/home/web/", a_tag.get('href', ''))})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "기후에너지환경부", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_forest():
@@ -70,6 +76,7 @@ def fetch_forest():
         for page in range(1, 4):
             url = f"https://www.forest.go.kr/kfsweb/cop/bbs/selectBoardList.do?mn=NKFS_04_02_01&bbsId=BBSMSTR_1036&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             posts = {}
             for a in soup.find_all('a', href=re.compile(r'nttId=')):
@@ -84,7 +91,9 @@ def fetch_forest():
                 clean_title = re.sub(r'20\d{2}[-.\/]\d{2}[-.\/]\d{2}', '', clean_title).strip()
                 posts[ntt_m.group(1)] = {"기관": "산림청", "담당부서": "산림청", "날짜": date, "제목": clean_title, "링크": urljoin("https://www.forest.go.kr", raw_href)}
             items.extend(posts.values())
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "산림청", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_seoul():
@@ -93,6 +102,7 @@ def fetch_seoul():
         for page in range(1, 6):
             url = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&curPage={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -101,7 +111,9 @@ def fetch_seoul():
                     ntt_m = re.search(r'nttNo=(\d+)|(\d{5,})', raw_href)
                     link = f"https://www.seoul.go.kr/news/news_report.do?bbsNo=158&nttNo={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.seoul.go.kr/news/", raw_href)
                     items.append({"기관": "서울특별시", "담당부서": tds[-2].get_text(separator=' ', strip=True), "날짜": tds[-1].text.strip(), "제목": a_tag.text.strip(), "링크": link})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "서울특별시", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_ftc():
@@ -110,6 +122,7 @@ def fetch_ftc():
         for page in range(1, 4):
             url = f"https://www.ftc.go.kr/www/selectBbsNttList.do?bordCd=3&key=12&searchCtgry=01,02&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -121,7 +134,9 @@ def fetch_ftc():
                             if dept_text and not re.search(r'^\d{4}[-.\/]', dept_text): dept = dept_text; break
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     items.append({"기관": "공정거래위원회", "담당부서": dept, "날짜": date_match.group(1).replace('.', '-') if date_match else "날짜 미표기", "제목": a_tag.text.strip(), "링크": urljoin("https://www.ftc.go.kr/www/", a_tag.get('href', ''))})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "공정거래위원회", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_mois():
@@ -130,6 +145,7 @@ def fetch_mois():
         for page in range(1, 4):
             url = f"https://www.mois.go.kr/frt/bbs/type010/commonSelectBoardList.do?bbsId=BBSMSTR_000000000008&pageIndex={page}"
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.select('table tbody tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -140,16 +156,19 @@ def fetch_mois():
                     dept_text = tds[-3].get_text(separator=' ', strip=True) if len(tds) >= 3 else "행정안전부"
                     date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
                     items.append({"기관": "행정안전부", "담당부서": dept_text if dept_text and not re.search(r'^\d{4}[-.\/]', dept_text) else "행정안전부", "날짜": date_match.group(1).replace('.', '-') if date_match else "날짜 미표기", "제목": a_tag.text.strip(), "링크": link})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "행정안전부", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_mnd():
     items = []
-    mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "text/html"}
     try:
+        mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "text/html"}
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
             resp = requests.get(url, headers=mnd_headers, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.find_all(['tr', 'li']):
                 a_tag = row.find('a')
@@ -173,7 +192,9 @@ def fetch_mnd():
                         if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실"]):
                             dept = t_text; break
                 items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "국방부", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def fetch_sub_legislation():
@@ -181,6 +202,7 @@ def fetch_sub_legislation():
     try:
         for url in ["https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "https://opinion.lawmaking.go.kr/gcom/ogLmPp"]:
             resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             for row in soup.find_all('tr'):
                 a_tag, tds = row.find('a'), row.find_all('td')
@@ -191,6 +213,7 @@ def fetch_sub_legislation():
         
         adm_url = "https://opinion.lawmaking.go.kr/gcom/admpp"
         resp = requests.get(adm_url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+        if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
         soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
         for row in soup.find_all('tr'):
             a_tag, tds = row.find('a'), row.find_all('td')
@@ -198,7 +221,9 @@ def fetch_sub_legislation():
                 title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
                 if title and len(title) > 1 and "공고번호" not in title:
                     items.append({"기관": "⚖️ 행정예고", "담당부서": tds[-3].get_text(separator=' ', strip=True), "날짜": tds[-2].get_text(separator=' ', strip=True), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
-    except: pass
+        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
+    except Exception as e:
+        items.append({"기관": "⚖️ 입법/행정예고", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
     return items
 
 def main():
@@ -230,10 +255,14 @@ def main():
         
         if not new_items.empty:
             for _, row in new_items.head(5).iterrows():
-                msg = f"🔔 <b>[새 업데이트] {row['기관']}</b>\n부서: {row['담당부서']}\n제목: <a href='{row['링크']}'>{row['제목']}</a>\n날짜: {row['날짜']}"
-                send_telegram(msg)
-            if len(new_items) > 5:
-                send_telegram(f"<i>...외 {len(new_items) - 5}건의 새로운 업데이트가 있습니다.</i>")
+                # 에러 경고 메세지는 텔레그램으로 쏘지 않음
+                if "🚨" not in row['제목']:
+                    msg = f"🔔 <b>[새 업데이트] {row['기관']}</b>\n부서: {row['담당부서']}\n제목: <a href='{row['링크']}'>{row['제목']}</a>\n날짜: {row['날짜']}"
+                    send_telegram(msg)
+            
+            real_new = new_items[~new_items['제목'].str.contains("🚨", na=False)]
+            if len(real_new) > 5:
+                send_telegram(f"<i>...외 {len(real_new) - 5}건의 새로운 업데이트가 있습니다.</i>")
 
     df_new.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
