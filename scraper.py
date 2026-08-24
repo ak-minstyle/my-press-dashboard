@@ -151,27 +151,45 @@ def fetch_mnd():
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
             resp = requests.get(url, headers=mnd_headers, timeout=TIMEOUT, verify=False)
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
-            for row in soup.find_all(['tr', 'li']):
+            
+            # 사이트 전체가 아닌 본문 게시판 영역(table tbody tr)만 선택해 메뉴 항목 제외
+            main_area = soup.find(id=re.compile(r'content|main', re.I)) or soup
+            rows = main_area.select('table tbody tr') or main_area.select('.board_list tr')
+            
+            for row in rows:
                 a_tag = row.find('a')
-                if not a_tag: continue
+                tds = row.find_all('td')
+                if not a_tag or len(tds) < 3: 
+                    continue
+                
                 clean_title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
-                if len(clean_title) < 2 or clean_title == "자세히보기": continue
+                if len(clean_title) < 2 or clean_title in ["제목", "자세히보기", "번호", "구분"]: 
+                    continue
                 
                 raw_href = a_tag.get('href', '')
                 onclick_attr = a_tag.get('onclick', '')
-                ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + onclick_attr)
-                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.mnd.go.kr", raw_href) if not raw_href.startswith('#') else ""
+                combined = raw_href + onclick_attr
                 
-                if not link: continue
+                # 게시글 ID 추출 및 상세 링크 생성
+                ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)|(\d{5,})', combined)
+                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2) or ntt_m.group(3)}" if ntt_m else urljoin("https://www.mnd.go.kr", raw_href)
+                
+                if not link or link.endswith('#') or 'javascript:void' in link.lower():
+                    continue
+
+                # 날짜 추출
                 date_match = re.search(r'(202\d)\s*[-.\/]\s*(\d{2})\s*[-.\/]\s*(\d{2})', row.text)
                 date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}" if date_match else "날짜 미표기"
                 
+                # 부서 추출
                 dept = "국방부"
-                for td in row.find_all(['td', 'span']):
+                for td in tds:
                     t_text = td.get_text(strip=True)
-                    if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text):
-                        if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실"]):
-                            dept = t_text; break
+                    if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
+                        if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실", "본부"]):
+                            dept = t_text
+                            break
+                            
                 items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
     except: pass
     return items
