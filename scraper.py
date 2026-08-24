@@ -199,21 +199,29 @@ def fetch_mnd():
 
 def fetch_sub_legislation():
     items = []
+    
+    # 1. 입법예고 (죽은 링크 삭제 및 단독 실행)
     try:
-        for url in ["https://opinion.lawmaking.go.kr/gns/elm/stty/lst", "https://opinion.lawmaking.go.kr/gcom/ogLmPp"]:
-            resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
-            if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
-            soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
-            for row in soup.find_all('tr'):
-                a_tag, tds = row.find('a'), row.find_all('td')
-                if a_tag and len(tds) >= 6:
-                    title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
-                    if title and len(title) > 1 and "공고번호" not in title:
-                        items.append({"기관": "⚖️ 입법예고", "담당부서": tds[-6].get_text(separator=' ', strip=True), "날짜": tds[-4].get_text(separator=' ', strip=True), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
+        url = "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
+        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}")
+        soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
+        for row in soup.find_all('tr'):
+            a_tag, tds = row.find('a'), row.find_all('td')
+            if a_tag and len(tds) >= 6:
+                title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
+                if title and len(title) > 1 and "공고번호" not in title:
+                    items.append({"기관": "⚖️ 입법예고", "담당부서": tds[-6].get_text(separator=' ', strip=True), "날짜": tds[-4].get_text(separator=' ', strip=True), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
+    except Exception as e:
+        items.append({"기관": "⚖️ 입법예고", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 입법예고 수집 실패: {str(e)[:50]}", "링크": ""})
         
-        adm_url = "https://opinion.lawmaking.go.kr/gcom/admpp"
-        resp = requests.get(adm_url, headers=HEADERS, timeout=TIMEOUT, verify=False)
-        if resp.status_code != 200: raise Exception(f"HTTP {resp.status_code}")
+    # 2. 행정예고 (입법예고가 실패해도 이건 무조건 돌아가도록 분리)
+    try:
+        url = "https://opinion.lawmaking.go.kr/gcom/admpp"
+        resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}")
         soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
         for row in soup.find_all('tr'):
             a_tag, tds = row.find('a'), row.find_all('td')
@@ -221,11 +229,10 @@ def fetch_sub_legislation():
                 title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
                 if title and len(title) > 1 and "공고번호" not in title:
                     items.append({"기관": "⚖️ 행정예고", "담당부서": tds[-3].get_text(separator=' ', strip=True), "날짜": tds[-2].get_text(separator=' ', strip=True), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
-        if not items: raise Exception("데이터 0건 수집 (태그 구조 변경 의심)")
     except Exception as e:
-        items.append({"기관": "⚖️ 입법/행정예고", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 수집 실패: {str(e)[:50]}", "링크": ""})
-    return items
+        items.append({"기관": "⚖️ 행정예고", "담당부서": "에러", "날짜": "2099-12-31", "제목": f"🚨 행정예고 수집 실패: {str(e)[:50]}", "링크": ""})
 
+    return items
 def main():
     fetch_functions = [
         fetch_sub_legislation, fetch_molit, fetch_mcee, fetch_forest, 
