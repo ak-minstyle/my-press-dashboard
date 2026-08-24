@@ -30,11 +30,10 @@ jobs:
         ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
       run: python scraper.py
 
-    - name: data.csv 변경사항 커밋 및 푸시
+- name: data.csv 변경사항 커밋 및 푸시
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add data.csv
-        # 변경사항이 있을 때만 커밋
+        git add data.csv || true
         git commit -m "Auto-update data.csv via GitHub Actions" || echo "No changes to commit"
-        git push
+        git push || echo "No changes to push"
