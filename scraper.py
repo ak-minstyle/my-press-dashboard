@@ -1,5 +1,4 @@
 import os
-import time
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -13,17 +12,15 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-TIMEOUT = 8 
+TIMEOUT = 10 
 
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
-    try:
-        requests.post(url, data=payload, timeout=5)
-    except:
-        pass
+    try: requests.post(url, data=payload, timeout=5)
+    except: pass
 
 def fetch_molit_detail(item):
     try:
@@ -48,7 +45,7 @@ def fetch_molit():
                 a_tag, tds = row.find('a'), row.find_all('td')
                 if a_tag and len(tds) >= 4:
                     items.append({"기관": "국토교통부", "담당부서": "국토교통부", "날짜": tds[3].text.strip(), "제목": a_tag.text.strip(), "링크": "https://www.molit.go.kr/USR/NEWS/m_71/" + a_tag['href']})
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             items = list(executor.map(fetch_molit_detail, items))
     except: pass
     return items
@@ -148,7 +145,7 @@ def fetch_mois():
 
 def fetch_mnd():
     items = []
-    mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"}
+    mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "text/html"}
     try:
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
@@ -163,7 +160,7 @@ def fetch_mnd():
                 raw_href = a_tag.get('href', '')
                 onclick_attr = a_tag.get('onclick', '')
                 ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + onclick_attr)
-                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.mnd.go.kr", raw_href) if not raw_href.startswith('#') and 'javascript' not in raw_href.lower() else ""
+                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2)}" if ntt_m else urljoin("https://www.mnd.go.kr", raw_href) if not raw_href.startswith('#') else ""
                 
                 if not link: continue
                 date_match = re.search(r'(202\d)\s*[-.\/]\s*(\d{2})\s*[-.\/]\s*(\d{2})', row.text)
@@ -172,7 +169,7 @@ def fetch_mnd():
                 dept = "국방부"
                 for td in row.find_all(['td', 'span']):
                     t_text = td.get_text(strip=True)
-                    if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
+                    if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text):
                         if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실"]):
                             dept = t_text; break
                 items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
@@ -204,9 +201,7 @@ def fetch_sub_legislation():
     except: pass
     return items
 
-
 def main():
-    # 국회 API(fetch_assembly_bills)는 제거하고 나머지 웹 크롤링 타겟만 배치
     fetch_functions = [
         fetch_sub_legislation, fetch_molit, fetch_mcee, fetch_forest, 
         fetch_seoul, fetch_ftc, fetch_mois, fetch_mnd
