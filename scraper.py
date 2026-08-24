@@ -11,7 +11,10 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"}
-ASSEMBLY_API_KEY = os.environ.get("ASSEMBLY_API_KEY", "4771fb319fc6421c96f412002daa0e91")
+
+# 🔥 문제의 원인 해결: 환경변수 싹 지우고 원래 쓰시던 키로 하드코딩!
+ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
+
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TIMEOUT = 8 
@@ -205,13 +208,12 @@ def fetch_sub_legislation():
     except: pass
     return items
 
-# 🔥 문제의 국회 API 원상복구 (어떤 커스텀 헤더도 안 넣음!)
 def fetch_assembly_bills():
     bills = []
     try:
         url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
-        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 600, "AGE": "22"}
-        # headers를 완전히 빼버려서 처음 잘 될 때의 코드로 100% 동일하게 롤백
+        # 🔥 2. 원래 되던 원본 그대로 API 요청 (복잡하게 꼬아둔 것 다 제거)
+        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}
         resp = requests.get(url, params=params, timeout=15, verify=False)
         data = resp.json()
         if "nzmimeepazxkubdpn" in data:
