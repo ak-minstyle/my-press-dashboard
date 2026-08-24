@@ -2,8 +2,8 @@ name: Data Scraper and Telegram Bot
 
 on:
   schedule:
-    - cron: '0 * * * *' # 매 정각 1시간마다 실행 (UTC 기준)
-  workflow_dispatch: # 수동으로 버튼 눌러서 실행 가능하게 함
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -30,7 +30,7 @@ jobs:
         ASSEMBLY_API_KEY: ${{ secrets.ASSEMBLY_API_KEY }}
       run: python scraper.py
 
-- name: data.csv 변경사항 커밋 및 푸시
+    - name: data.csv 변경사항 커밋 및 푸시
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
