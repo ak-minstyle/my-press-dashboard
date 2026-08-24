@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
+import requests
 import os
+import urllib3
 
-# 페이지 기본 설정
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 st.set_page_config(page_title="국회 법안·입법예고 / 보도자료 통합 대시보드", page_icon="📰", layout="wide")
 
-# CSS 스타일링 (기존과 동일)
 st.markdown("""
     <style>
         [data-testid="stStatusWidget"] { visibility: hidden !important; display: none !important; }
@@ -17,52 +19,79 @@ st.markdown("""
         div[data-baseweb="tab-list"] button[aria-selected="true"] { background-color: #2563eb !important; border-color: #2563eb !important; }
         div[data-baseweb="tab-list"] button[aria-selected="true"] * { color: #ffffff !important; font-weight: bold !important; }
         div[data-baseweb="input"] { background-color: #f8fafc !important; border: 1px solid #cbd5e1 !important; border-radius: 6px !important; }
-        div[data-baseweb="input"] input { color: #0f172a !important; background-color: #f8fafc !important; }
         .stButton > button { background-color: #f1f5f9 !important; color: #0f172a !important; border: 1px solid #cbd5e1 !important; font-weight: bold !important; }
         .stButton > button:hover { background-color: #2563eb !important; color: #ffffff !important; }
         .table-responsive { width: 100%; margin-bottom: 1rem; }
         .custom-table { width: 100%; border-collapse: collapse; background-color: #ffffff !important; }
         .custom-table th { background-color: #f1f5f9 !important; color: #0f172a !important; font-weight: bold; padding: 12px; border-bottom: 2px solid #cbd5e1; text-align: left; white-space: nowrap !important; }
-        .custom-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155 !important; text-align: left; }
+        .custom-table td { padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155 !important; }
         .nowrap-col { white-space: nowrap !important; }
         .custom-table tr:hover { background-color: #f8fafc !important; }
         .dash-link { color: #1d4ed8 !important; font-weight: bold !important; text-decoration: none !important; word-break: keep-all; }
         .dash-link:hover { text-decoration: underline !important; color: #1e40af !important; }
-        @media screen and (max-width: 768px) {
-            h1 { font-size: 1.4rem !important; line-height: 1.4 !important; }
-            p { font-size: 0.85rem !important; }
-            .custom-table, .custom-table tbody { display: block; width: 100%; }
-            .custom-table thead { display: none; }
-            .custom-table tr { display: block; margin-bottom: 12px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-            .custom-table td { display: flex; flex-direction: column; border: none !important; padding: 6px 0; font-size: 14px; }
-            .custom-table td::before { content: attr(data-label); font-size: 11px; color: #64748b; font-weight: bold; margin-bottom: 4px; }
-            .nowrap-col { white-space: normal !important; }
-        }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<h1 style='text-align: center; color: #0f172a; font-weight: 700; margin-bottom: 0.5rem;'>📜국회 발의 법안 · ⚖️정부 입법 행정예고<br>📰 정부·지자체 보도자료 통합 대시보드</h1>", unsafe_allow_html=True)
 
-# 데이터 로딩 (ttl=60으로 설정해두면 백그라운드 파일 갱신 시 자동 반영됨)
+ASSEMBLY_API_KEY = "4771fb319fc6421c96f412002daa0e91"
+
+# 트랙 1: 깃허브 로봇이 만든 CSV 데이터 불러오기
 @st.cache_data(ttl=60)
-def load_data():
+def load_csv_data():
     if not os.path.exists("data.csv"):
         return pd.DataFrame()
     df = pd.read_csv("data.csv")
     df.fillna("", inplace=True)
     return df
 
-df_total = load_data()
+# 트랙 2: 국회 API 실시간 다이렉트 호출 (속도가 빠르므로 화면 단에서 처리)
+@st.cache_data(ttl=600)  # 10분마다 갱신
+def fetch_live_assembly_bills():
+    bills = []
+    try:
+        url = "https://open.assembly.go.kr/portal/openapi/nzmimeepazxkubdpn"
+        params = {"KEY": ASSEMBLY_API_KEY, "Type": "json", "pIndex": 1, "pSize": 500, "AGE": "22"}
+        resp = requests.get(url, params=params, timeout=10, verify=False)
+        data = resp.json()
+        if "nzmimeepazxkubdpn" in data:
+            for r in data["nzmimeepazxkubdpn"][1]["row"]:
+                bill_id, comm, title = r.get("BILL_ID", ""), r.get("COMMITTEE", "") or "", r.get("BILL_NAME", "")
+                if not bill_id: continue
+                link = f"https://likms.assembly.go.kr/bill/bi/billDetailPage.do?billId={bill_id}"
+                
+                is_kokto = "국토" in comm or (not comm and any(kw in title for kw in ["국토", "건축", "주택", "도로", "철도", "토지", "부동산", "교통", "물류"]))
+                is_hwan = any(kw in comm for kw in ["환경", "노동", "기후"]) or (not comm and any(kw in title for kw in ["기후", "환경", "폐기물", "대기", "노동", "고용", "근로", "에너지", "전력", "신재생", "탄소", "생태", "수질"]))
+                is_jungmu = "정무" in comm or (not comm and any(kw in title for kw in ["금융", "공정거래", "보훈", "자본시장", "가상자산", "가맹", "하도급"]))
+                
+                base = {"담당부서": f"발의: {r.get('PROPOSER', '국회의원')}", "날짜": r.get("PROPOSE_DT", ""), "제목": title, "링크": link}
+                if is_kokto: bills.append({"기관": "📜 국토교통위원회", **base})
+                elif is_hwan: bills.append({"기관": "📜 기후에너지환경노동위원회", **base})
+                elif is_jungmu: bills.append({"기관": "📜 정무위원회", **base})
+    except Exception as e:
+        st.error(f"국회 실시간 데이터를 불러오는 중 오류가 발생했습니다: {e}")
+    return pd.DataFrame(bills)
 
 col_title, col_btn = st.columns([8, 2])
 with col_btn:
-    if st.button("🔄 화면 새로고침 (즉시로딩)"):
+    if st.button("🔄 화면 새로고침"):
         st.cache_data.clear()
         st.rerun()
 
+# 두 트랙의 데이터 합치기
+df_csv = load_csv_data()
+df_bills = fetch_live_assembly_bills()
+
+df_total = pd.concat([df_csv, df_bills], ignore_index=True)
+
 if df_total.empty:
-    st.info("데이터를 수집 중이거나 data.csv 파일이 없습니다. (수집 봇 작동 대기 중)")
+    st.info("데이터가 없습니다. 수집 로봇 작동을 기다려주세요.")
 else:
+    # 중복 제거 및 날짜순 정렬
+    df_total = df_total.drop_duplicates(subset=['기관', '제목', '날짜'], keep='first')
+    df_total['sort_date'] = pd.to_datetime(df_total['날짜'].str.extract(r'(\d{4}[-.\/]\d{2}[-.\/]\d{2})')[0], errors='coerce')
+    df_total = df_total.sort_values(by='sort_date', ascending=False, na_position='last').drop(columns=['sort_date'])
+
     search_kw = st.text_input("🔍 실시간 통합 검색 (제목, 담당부서, 대표발의자)", "")
     if search_kw:
         df_total = df_total[df_total['제목'].str.contains(search_kw, case=False, na=False) | df_total['담당부서'].str.contains(search_kw, case=False, na=False)]
