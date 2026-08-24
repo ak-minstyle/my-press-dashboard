@@ -143,39 +143,66 @@ def fetch_mois():
     except: pass
     return items
 
-# 🎖️ 국토부 스타일로 맞춘 국방부 파서
+# 🎖️ 국방부 전용 파서 (정규식 완전 수정)
 def fetch_mnd():
     items = []
     try:
-        mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "text/html"}
+        mnd_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         for page in range(1, 4):
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
             resp = requests.get(url, headers=mnd_headers, timeout=TIMEOUT, verify=False)
             soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
             
-            # 국토부처럼 표 내부 tr만 선택
-            for row in soup.select('table tbody tr'):
-                a_tag, tds = row.find('a'), row.find_all('td')
-                if a_tag and len(tds) >= 4:
-                    raw_href = str(a_tag.get('href', ''))
-                    onclick_attr = str(a_tag.get('onclick', ''))
-                    ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + " " + onclick_attr)
-                    if not ntt_m: continue
-                    
-                    link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_m.group(1) or ntt_m.group(2)}"
-                    date_match = re.search(r'(202\d[-.\/]\d{2}[-.\/]\d{2})', row.text)
-                    date = date_match.group(1).replace('.', '-') if date_match else tds[-2].text.strip()
-                    dept = tds[1].text.strip() if len(tds) >= 5 else "국방부"
-                    
-                    items.append({
-                        "기관": "국방부",
-                        "담당부서": dept if dept else "국방부",
-                        "날짜": date,
-                        "제목": a_tag.text.strip(),
-                        "링크": link
-                    })
+            for a_tag in soup.find_all('a'):
+                combined = str(a_tag.get('href', '')) + " " + str(a_tag.get('onclick', ''))
+                
+                # 정확히 nttId=숫자 패턴만 추출 (메뉴 ID 수집 버그 차단)
+                ntt_m = re.search(r'nttId=(\d+)', combined)
+                if not ntt_m:
+                    continue
+                
+                ntt_id = ntt_m.group(1)
+                link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_id}"
+                
+                parent_row = a_tag.find_parent(['tr', 'li'])
+                if not parent_row:
+                    continue
+                
+                date_m = re.search(r'(202\d[-.\/]\d{2}[-.\/]\d{2})', parent_row.get_text(separator=' ', strip=True))
+                if not date_m:
+                    continue
+                date = date_m.group(1).replace('.', '-')
+                
+                title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
+                if not title or title in ["제목", "자세히보기"]:
+                    continue
+                
+                dept = "국방부"
+                tds = parent_row.find_all('td')
+                for td in tds:
+                    t_text = td.get_text(strip=True)
+                    if t_text and t_text != title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
+                        if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실", "본부"]):
+                            dept = t_text
+                            break
+                
+                items.append({
+                    "기관": "국방부",
+                    "담당부서": dept,
+                    "날짜": date,
+                    "제목": title,
+                    "링크": link
+                })
     except: pass
-    return items
+    
+    unique_items = []
+    seen = set()
+    for item in items:
+        if item['링크'] not in seen:
+            seen.add(item['링크'])
+            unique_items.append(item)
+            
+    return unique_items
 
 def fetch_sub_legislation():
     items = []
@@ -224,9 +251,9 @@ def main():
     if os.path.exists(DATA_FILE):
         df_old = pd.read_csv(DATA_FILE)
         
-        # 기존 국방부 오염 데이터 밀어버리기
-        df_old = df_old[df_old['기관'] != '국방부']
+        # 더미 및 국방부 구형 오염 데이터 전량 삭제
         df_old = df_old[~df_old['제목'].str.contains("🚨", na=False)]
+        df_old = df_old[df_old['기관'] != '국방부']
         
         if not df_new.empty:
             fetched_orgs = df_new['기관'].unique()
