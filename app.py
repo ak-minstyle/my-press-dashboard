@@ -343,19 +343,34 @@ def fetch_mois():
     except: pass
     return items
 
+# 💡 국방부 전용 봇차단 우회 및 강화된 파서
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_mnd():
     items = []
     session = requests.Session()
-    session.headers.update(HEADERS)
+    
+    # 봇(Bot) 차단을 막기 위해 실제 브라우저와 동일한 보안 헤더 장착
+    mnd_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9",
+        "Referer": "https://www.mnd.go.kr/",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+    
     for page in range(1, 4):
         try:
             url = f"https://www.mnd.go.kr/mnd/167/subview.do?pageIndex={page}"
-            resp = session.get(url, timeout=12, verify=False)
+            resp = session.get(url, headers=mnd_headers, timeout=10, verify=False)
             resp.encoding = 'utf-8'
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            for row in soup.find_all('tr'):
+            # 테이블(tr) 또는 반응형 리스트(li) 구조 모두 대응
+            for row in soup.find_all(['tr', 'li']):
                 try:
                     a_tag = row.find('a')
                     if not a_tag: continue
@@ -365,43 +380,50 @@ def fetch_mnd():
                     if not clean_title or clean_title == "자세히보기" or len(clean_title) < 2:
                         continue
                         
-                    raw_href = a_tag.get('href', '')
+                    raw_href = a_tag.get('href', '') or ''
+                    onclick_attr = a_tag.get('onclick', '') or ''
                     
-                    # 🔥 수정한 부분: javascript 링크 버리지 않고 ID 추출해서 링크 만들기
                     link = ""
-                    if 'javascript' in raw_href.lower() or raw_href.startswith('#'):
-                        onclick_attr = a_tag.get('onclick', '')
-                        # nttId=12345 또는 fn_read('12345') 형태에서 숫자만 추출
-                        ntt_m = re.search(r'nttId=(\d+)|fn_read\([\'"]?(\d+)[\'"]?\)', raw_href + onclick_attr)
-                        if ntt_m:
-                            ntt_id = ntt_m.group(1) or ntt_m.group(2)
-                            link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_id}"
-                    else:
+                    # 각종 불규칙한 자바스크립트 함수명(fn_read, fn_article_view 등)에서 안전하게 게시글 ID 추출
+                    ntt_m = re.search(r'nttId=(\d+)|fn_[a-zA-Z_]*\([\'"]?(\d+)[\'"]?\)', raw_href + onclick_attr)
+                    
+                    if ntt_m:
+                        ntt_id = ntt_m.group(1) or ntt_m.group(2)
+                        link = f"https://www.mnd.go.kr/mnd/167/subview.do?nttId={ntt_id}"
+                    elif raw_href and not raw_href.startswith('#') and 'javascript' not in raw_href.lower():
                         link = urljoin("https://www.mnd.go.kr", raw_href)
-                    
-                    # 그래도 못 찾으면 현재 페이지 url이라도 할당
-                    if not link: 
-                        link = url
-                    
-                    date_match = re.search(r'(20\d{2}[-.\/]\d{2}[-.\/]\d{2})', row.text)
-                    date = date_match.group(1).replace('.', '-') if date_match else "날짜 미표기"
+                        
+                    if not link:
+                        continue 
+                        
+                    # 날짜 텍스트 중간에 공백이 들어가는 꼼수("2024. 08. 24")까지 대응하는 정규식
+                    date_match = re.search(r'(202\d)\s*[-.\/]\s*(\d{2})\s*[-.\/]\s*(\d{2})', row.text)
+                    date = f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}" if date_match else "날짜 미표기"
                     
                     dept = "국방부"
-                    etc_tds = row.find_all('td', class_=re.compile(r'td-etc'))
-                    for td in etc_tds:
+                    for td in row.find_all(['td', 'span']):
                         t_text = td.get_text(strip=True)
-                        if t_text and not re.match(r'^\d+$', t_text) and not re.search(r'20\d{2}', t_text):
-                            dept = t_text
-                            break
-                            
+                        if t_text and t_text != clean_title and not re.match(r'^\d+$', t_text) and not re.search(r'202\d', t_text):
+                            if any(kw in t_text for kw in ["국방", "대변인", "정책", "기획", "인사", "전력", "과", "팀", "실"]):
+                                dept = t_text
+                                break
+                                
                     items.append({"기관": "국방부", "담당부서": dept, "날짜": date, "제목": clean_title, "링크": link})
                 except Exception:
                     continue 
         except Exception:
             continue
-    return items
+            
+    # 중복 게시물 안전 제거
+    unique_items = []
+    seen = set()
+    for item in items:
+        if item['제목'] not in seen:
+            seen.add(item['제목'])
+            unique_items.append(item)
+            
+    return unique_items
 
-# 💡 입법예고 & 행정예고 독립적 파싱 수집기 (tbody 의존성 제거 및 행 단위 순회 고정)
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_sub_legislation():
     items = []
