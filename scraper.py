@@ -185,6 +185,8 @@ def fetch_mnd():
 
 def fetch_sub_legislation():
     items = []
+    
+    # 1. 입법예고 가져오기
     try:
         url = "https://opinion.lawmaking.go.kr/gcom/ogLmPp"
         resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
@@ -197,16 +199,32 @@ def fetch_sub_legislation():
                     items.append({"기관": "⚖️ 입법예고", "담당부서": tds[-6].get_text(separator=' ', strip=True), "날짜": tds[-4].get_text(separator=' ', strip=True), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
     except: pass
 
+    # 2. 행정예고 가져오기 (수정된 부분)
     try:
         url = "https://opinion.lawmaking.go.kr/gcom/admpp"
         resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, verify=False)
         soup = BeautifulSoup(resp.content.decode('utf-8', 'ignore'), 'html.parser')
+        
         for row in soup.find_all('tr'):
             a_tag, tds = row.find('a'), row.find_all('td')
             if a_tag and len(tds) >= 3:
+                
+                # [추가된 핵심 코드]
+                # a 태그 안에 들어있는 'ogmark' 관련 span 태그(진행 뱃지)를 찾아서 완전히 제거
+                for span in a_tag.find_all('span', class_=re.compile(r'ogmark')):
+                    span.decompose()
+
+                # '진행' 태그가 잘려나간 상태에서 pure 텍스트만 가져온 뒤 불필요한 공백 정제
                 title = re.sub(r'새글|첨부파일|자세히보기|\s+', ' ', a_tag.get_text(strip=True)).strip()
+                
                 if title and len(title) > 1 and "공고번호" not in title:
-                    items.append({"기관": "⚖️ 행정예고", "담당부서": tds[-3].get_text(separator=' ', strip=True), "날짜": tds[-2].text.strip(), "제목": title, "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))})
+                    items.append({
+                        "기관": "⚖️ 행정예고", 
+                        "담당부서": tds[-3].get_text(separator=' ', strip=True), 
+                        "날짜": tds[-2].text.strip(), 
+                        "제목": title, 
+                        "링크": urljoin("https://opinion.lawmaking.go.kr", a_tag.get('href', ''))
+                    })
     except: pass
 
     return items
