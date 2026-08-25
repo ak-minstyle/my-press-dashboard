@@ -112,7 +112,7 @@ def load_csv_data():
     df.fillna("", inplace=True)
     return df
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=1800, show_spinner="📜 국회 입법예고 데이터를 불러오는 중입니다...")
 def fetch_live_assembly_bills():
     bills = []
     try:
