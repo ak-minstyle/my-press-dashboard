@@ -2,7 +2,7 @@ name: Data Scraper and Telegram Bot
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # 🔥 여기가 30분마다 실행되도록 바뀐 부분이야
+    - cron: '27/57 * * * *'  # 🔥 여기가 30분마다 실행되도록 바뀐 부분이야
   workflow_dispatch:
 
 jobs:
